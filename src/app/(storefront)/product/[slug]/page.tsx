@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import ProductShowcase from "@/components/storefront/ProductShowcase"; // Import the new component
+import ProductShowcase from "@/components/storefront/ProductShowcase"; 
 
 // 1. DYNAMIC METADATA
 export async function generateMetadata({ 
@@ -38,7 +38,8 @@ export default async function ProductPage({
   const { slug } = await params;
   const supabase = await createClient();
 
-  // Fetch Logic: Now includes 'sale_price' and 'color_tag'
+  // Fetch Logic: 
+  // We fetch everything needed for the client interactive logic
   const { data: product } = await supabase
     .from('products')
     .select(`
@@ -57,13 +58,13 @@ export default async function ProductPage({
 
   if (!product) notFound();
 
-  // Sort images to ensure order consistency
+  // Sort images for consistent display order
   product.product_images.sort((a, b) => a.display_order - b.display_order);
 
   return (
-    // We remove the fixed header stub to let the real StorefrontNav (from layout) show.
-    // The ProductShowcase handles the responsiveness.
-    <div className="bg-background">
+    // Clean wrapper to avoid layout shifts. 
+    // The interactivity happens inside ProductShowcase.
+    <div className="bg-background min-h-screen">
        <ProductShowcase product={product} />
     </div>
   );

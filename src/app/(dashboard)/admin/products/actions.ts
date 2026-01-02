@@ -9,10 +9,29 @@ export type VariantInput = {
   color: string;
   sku: string;
   stock: number;
-  priceDiff: number;
+  priceDiff: number; // e.g., +200 KES for XXL
 };
 
-// --- NEW: Update Action for Quick Edits ---
+// --- 1. GHOST MODE ACTION (NEW) ---
+// Toggles the visibility of a product on the storefront without deleting it.
+export async function toggleProductVisibility(id: string, currentStatus: boolean) {
+  const supabase = await createClient();
+  
+  const { error } = await supabase
+    .from('products')
+    .update({ is_visible: !currentStatus })
+    .eq('id', id);
+
+  if (error) throw new Error(`Failed to toggle visibility: ${error.message}`);
+  
+  revalidatePath('/admin/products');
+  // We also revalidate the shop page to ensure the ghosted item disappears immediately
+  revalidatePath('/shop'); 
+  revalidatePath('/');
+}
+
+// --- 2. QUICK EDIT ACTION ---
+// Allows instant updates from the inventory table (Price & Stock)
 export async function updateQuickEdit(
   type: 'product_price' | 'variant_stock', 
   id: string, 
@@ -45,47 +64,54 @@ export async function updateQuickEdit(
   }
 }
 
-// --- UPDATED: Create Drop with Sale Price & Color Images ---
+// --- 3. CREATE PRODUCT DROP ---
+// Handles the complex creation of Product + Variants + Images
 export async function createProductDrop(
   formData: FormData, 
   variants: VariantInput[], 
-  imageUrls: { url: string; color?: string }[] // Updated Type
+  imageUrls: { url: string; color?: string }[]
 ) {
   const supabase = await createClient();
 
-  // 1. EXTRACT
+  // A. EXTRACT & VALIDATE
   const title = formData.get('title') as string;
   const description = formData.get('description') as string;
   const basePrice = Math.round(parseFloat(formData.get('basePrice') as string) * 100); 
-  
-  // New: Sale Price Logic
-  const salePriceInput = formData.get('salePrice');
-  const salePrice = salePriceInput ? Math.round(parseFloat(salePriceInput as string) * 100) : null;
-
   const category = formData.get('category') as string;
   const gender = formData.get('gender') as string;
+
+  // Sale Price Logic (Optional)
+  const salePriceInput = formData.get('salePrice');
+  const salePrice = salePriceInput && salePriceInput !== '' 
+    ? Math.round(parseFloat(salePriceInput as string) * 100) 
+    : null;
   
-  // 2. CREATE PRODUCT
+  if (!title || variants.length === 0) {
+    throw new Error("A drop needs a title and at least one variant.");
+  }
+
+  // B. CREATE PARENT PRODUCT
   const slug = title.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '');
   
   const { data: product, error: prodError } = await supabase
     .from('products')
     .insert({
       title,
-      slug: `${slug}-${Date.now()}`,
+      slug: `${slug}-${Date.now()}`, // Timestamp ensures uniqueness
       description,
       base_price: basePrice,
-      sale_price: salePrice, // Saved to DB
+      sale_price: salePrice,
       category,
       gender,
-      status: 'active'
+      status: 'active',
+      is_visible: true // Default to visible
     })
     .select()
     .single();
 
   if (prodError) throw new Error(`Failed to create drop: ${prodError.message}`);
 
-  // 3. CREATE VARIANTS
+  // C. CREATE VARIANTS (The Matrix)
   const variantsToInsert = variants.map(v => ({
     product_id: product.id,
     size: v.size,
@@ -99,16 +125,17 @@ export async function createProductDrop(
   const { error: varError } = await supabase.from('variants').insert(variantsToInsert);
   
   if (varError) {
+    // Transaction Rollback: Delete the product if variants fail
     await supabase.from('products').delete().eq('id', product.id);
     throw new Error(`Variant Error: ${varError.message}`);
   }
 
-  // 4. LINK IMAGES (With Color Mapping)
+  // D. LINK IMAGES (With Smart Color Mapping)
   if (imageUrls.length > 0) {
     const imagesToInsert = imageUrls.map((img, index) => ({
       product_id: product.id,
       url: img.url,
-      color_tag: img.color || null, // Store which color this image belongs to
+      color_tag: img.color || null, 
       display_order: index
     }));
     await supabase.from('product_images').insert(imagesToInsert);
