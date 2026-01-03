@@ -1,75 +1,78 @@
-import Link from "next/link";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { createClient } from "@/lib/supabase/server";
+import Hero from "@/components/storefront/home/Hero";
+import FeaturedManager from "@/components/storefront/home/FeaturedManager";
+import NewsTicker from "@/components/storefront/home/NewsTicker";
+import Footer from "@/components/storefront/Footer";
+import { MoveDown } from "lucide-react";
 
-export default function HomePage() {
+// Cache for 60 seconds for performance
+export const revalidate = 60;
+
+export default async function HomePage() {
+  const supabase = await createClient();
+
+  // 1. FETCH ACTIVE PRODUCTS
+  const { data: rawProducts } = await supabase
+    .from('products')
+    .select(`
+      id, title, slug, base_price, sale_price, category, status, description, created_at,
+      product_images ( url, display_order ),
+      variants ( stock_quantity )
+    `)
+    .eq('status', 'active')
+    .eq('is_visible', true);
+
+  // 2. SMART PROCESSING
+  const products = rawProducts?.map(p => ({
+    ...p,
+    total_stock: p.variants.reduce((sum, v) => sum + v.stock_quantity, 0),
+    main_image: p.product_images?.sort((a, b) => a.display_order - b.display_order)[0]?.url,
+    // Calculate Discount % for sorting
+    discountPct: p.sale_price ? ((p.base_price - p.sale_price) / p.base_price) : 0
+  })) || [];
+
+  // 3. SEGMENT DATA
+  // Sort sales by highest discount first
+  const saleProducts = [...products]
+    .filter(p => p.sale_price && p.sale_price < p.base_price)
+    .sort((a, b) => b.discountPct - a.discountPct);
+
+  // Extract Categories dynamically
+  const categories = Array.from(new Set(products.map(p => p.category))).sort();
+
   return (
-    <div className="relative h-screen w-full overflow-hidden flex items-center justify-center bg-background text-foreground">
+    <main className="min-h-screen bg-background text-foreground selection:bg-foreground selection:text-background">
       
-      {/* 1. BACKGROUND LAYERS */}
-      <div className="absolute inset-0 z-0">
-        {/* Subtle Grid Pattern for structure */}
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]" />
-        
-        {/* Vignette for focus */}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
-      </div>
+      {/* A. HERO SECTION */}
+      <Hero />
 
-      {/* 2. MAIN CONTENT */}
-      <div className="relative z-10 text-center space-y-8 px-4 max-w-7xl mx-auto">
-        
-        {/* Brand Tagline */}
-        <div className="flex items-center justify-center gap-2 animate-fade-in opacity-0" style={{ animationDelay: "0.2s" }}>
-          <Sparkles className="w-4 h-4 text-accent" />
-          <p className="text-xs md:text-sm font-medium tracking-[0.4em] text-muted-foreground uppercase">
-            Nairobi Streetwear • Est. 2026
-          </p>
-          <Sparkles className="w-4 h-4 text-accent" />
-        </div>
-        
-        {/* Massive Headline */}
-        <h1 className="text-7xl md:text-[10rem] font-black tracking-tighter leading-[0.8] uppercase mix-blend-difference animate-slide-up opacity-0" style={{ animationDelay: "0.4s" }}>
-          Concrete <br />
-          <span className="text-transparent bg-clip-text bg-gradient-to-b from-white to-neutral-600">
-            Jungle
-          </span>
-        </h1>
-        
-        {/* Call to Actions */}
-        <div className="pt-8 flex flex-col md:flex-row gap-6 justify-center items-center animate-fade-in opacity-0" style={{ animationDelay: "0.8s" }}>
-          
-          <Link 
-            href="/shop" 
-            className="group relative px-10 py-5 bg-foreground text-background font-bold uppercase tracking-widest hover:bg-neutral-200 transition-all"
-          >
-            <span className="relative z-10 flex items-center gap-2">
-              Shop The Drop <ArrowRight size={16} />
-            </span>
-            {/* Brutalist Shadow Effect */}
-            <div className="absolute inset-0 border border-foreground translate-x-1 translate-y-1 group-hover:translate-x-2 group-hover:translate-y-2 transition-transform border-white mix-blend-difference pointer-events-none" />
-          </Link>
-          
-          <Link 
-            href="/collections" 
-            className="px-10 py-5 text-foreground border border-border font-bold uppercase tracking-widest hover:bg-white/5 hover:border-white/40 transition-all"
-          >
-            View Lookbook
-          </Link>
-        </div>
+      {/* B. WELCOME / INTRO */}
+      <section className="container mx-auto px-6 py-24 md:py-32 flex flex-col items-center text-center space-y-6 animate-fade-in-up">
+        <div className="h-16 w-[1px] bg-border mb-4" />
+        <h2 className="text-sm font-bold uppercase tracking-[0.3em] text-muted-foreground">
+          Welcome to Nairobi Streetwear
+        </h2>
+        <p className="text-2xl md:text-4xl font-black uppercase tracking-tighter max-w-2xl leading-tight">
+          Redefining the culture through fabric, form, and function.
+        </p>
+        <p className="text-sm text-muted-foreground max-w-lg leading-relaxed">
+          We curate pieces that speak to the soul of the city. Bold, authentic, and unapologetically premium. 
+          Explore the latest drops and archives below.
+        </p>
+        <MoveDown className="animate-bounce text-muted-foreground pt-4" size={40} strokeWidth={1} />
+      </section>
 
-      </div>
+      {/* C. FEATURED SHOWCASE (Smart Filter Engine) */}
+      <FeaturedManager 
+        allProducts={products} 
+        saleProducts={saleProducts} 
+        categories={categories} 
+      />
 
-      {/* 3. FLOATING TICKER (Marquee) */}
-      <div className="absolute bottom-0 w-full bg-background/80 backdrop-blur-sm border-t border-white/10 py-4 overflow-hidden whitespace-nowrap z-20">
-        <div className="animate-marquee inline-block text-xs md:text-sm font-mono text-muted-foreground">
-          <span className="mx-4">• NEW COLLECTION DROPPING FRIDAY</span>
-          <span className="mx-4">• FREE SHIPPING NAIROBI WIDE</span>
-          <span className="mx-4">• LIMITED STOCK AVAILABLE</span>
-          <span className="mx-4 text-accent">• EXCLUSIVE DROPS</span>
-          <span className="mx-4">• NEW COLLECTION DROPPING FRIDAY</span>
-          <span className="mx-4">• FREE SHIPPING NAIROBI WIDE</span>
-          <span className="mx-4">• LIMITED STOCK AVAILABLE</span>
-        </div>
-      </div>
-    </div>
+      {/* D. FOOTER & TICKER */}
+      <Footer />
+      <NewsTicker />
+      
+    </main>
   );
 }

@@ -36,57 +36,60 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Order not found" }, { status: 404 });
     }
 
-    // 4. HANDLE FAILED PAYMENT (CRITICAL LOGIC)
+    // 4. HANDLE FAILED PAYMENT (RESTOCK LOGIC)
+    // If payment fails/cancels, we must put the reserved items BACK into stock.
     if (ResultCode !== 0) {
-      console.log(`Payment Failed/Cancelled for ${existingOrder.id}. Restoring Stock.`);
+      console.log(`Payment Failed for ${existingOrder.id}. Restoring Stock.`);
       
-      // A. Mark Order as Failed
+      // A. Mark as Failed
       await supabase
         .from('orders')
         .update({ status: 'failed' })
         .eq('id', existingOrder.id);
 
       // B. RESTORE STOCK (Reverse the Reservation)
-      // Since the Trigger already deducted stock at checkout, we must put it back now.
-      const { data: orderItems } = await supabase
-        .from('order_items')
-        .select('variant_id, quantity')
-        .eq('order_id', existingOrder.id);
+      // Only restore if the order wasn't already marked failed (idempotency)
+      if (existingOrder.status !== 'failed') {
+        const { data: orderItems } = await supabase
+          .from('order_items')
+          .select('variant_id, quantity')
+          .eq('order_id', existingOrder.id);
 
-      if (orderItems) {
-        for (const item of orderItems) {
-          // We use the existing 'decrement_stock' function with a NEGATIVE number
-          // decrement(row_id, -2) === stock - (-2) === stock + 2
-          await supabase.rpc('decrement_stock', { 
-             row_id: item.variant_id, 
-             amount: -Math.abs(item.quantity) 
-          });
-          
-          // Log the Restock in Ledger
-          await supabase.from('inventory_ledger').insert({
-             variant_id: item.variant_id,
-             quantity_change: item.quantity, // Positive number (Adding back)
-             reason: 'payment_failed_restock',
-             reference_id: existingOrder.id
-          });
+        if (orderItems) {
+          for (const item of orderItems) {
+            // We use 'decrement_stock' with a NEGATIVE number to add stock back
+            // decrement(id, -2) => stock - (-2) = stock + 2
+            await supabase.rpc('decrement_stock', { 
+               row_id: item.variant_id, 
+               amount: -Math.abs(item.quantity) 
+            });
+            
+            // Log the return in Ledger
+            await supabase.from('inventory_ledger').insert({
+               variant_id: item.variant_id,
+               quantity_change: item.quantity,
+               reason: 'payment_failure_restock',
+               reference_id: existingOrder.id
+            });
+          }
         }
       }
 
-      // C. Refresh Admin Data
+      // Refresh Admin Data immediately
       revalidatePath('/admin/orders');
       revalidatePath('/admin/products');
-
+      
       return NextResponse.json({ message: "Logged failure & Restocked" });
     }
 
-    // 5. HANDLE SUCCESS (PAYMENT CONFIRMED)
-    // Extract Receipt Number
+    // 5. HANDLE SUCCESS
+    // CRITICAL: We do NOT deduct stock here. 
+    // The Database Trigger 'on_order_item_created' already deducted it when the checkout form was submitted.
+    
     const items = CallbackMetadata?.Item || [];
     const receiptItem = items.find((i: any) => i.Name === "MpesaReceiptNumber");
     const receiptNumber = receiptItem?.Value || "UNKNOWN";
 
-    // A. Update Status to PAID
-    // NOTE: We do NOT deduct stock here. The Database Trigger already did it when the order was created.
     await supabase
       .from('orders')
       .update({ 
@@ -95,8 +98,7 @@ export async function POST(request: Request) {
       })
       .eq('id', existingOrder.id);
 
-    // B. Refresh Admin Data (Live Updates)
-    // This tells Next.js to purge the cache for these pages, so the Admin sees the new data instantly.
+    // Force Admin Dashboard to update live
     revalidatePath('/admin/orders');
     revalidatePath('/admin/products');
     revalidatePath(`/track-order/${existingOrder.id}`);
