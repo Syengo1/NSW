@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowDown, Pause, Play, Volume2, VolumeX, WifiOff } from 'lucide-react';
+import { ArrowDown, Pause, Play, Volume2, VolumeX, WifiOff, BatteryWarning, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 
@@ -10,9 +10,9 @@ const PLAYLIST = [
   {
     id: 1,
     type: 'video',
-    src: '/nswHero.mp4',
+    src: '/nswHero.mp4', // CHECK: Ensure this file is < 40MB or use a URL from Vercel Blob/YouTube
     poster: 'https://images.unsplash.com/photo-1483985988355-763728e1935b?q=80&w=2070',
-    duration: 0, // Video duration is dynamic
+    duration: 0, 
   },
   {
     id: 2,
@@ -34,7 +34,7 @@ function useSmartEnvironment() {
   const [isLowData, setIsLowData] = useState(false);
 
   useEffect(() => {
-    // 1. Check Network Status
+    // 1. Check Network (Data Saver)
     if (typeof navigator !== 'undefined' && 'connection' in navigator) {
       const conn = (navigator as any).connection;
       const checkConnection = () => {
@@ -47,10 +47,15 @@ function useSmartEnvironment() {
       return () => conn.removeEventListener('change', checkConnection);
     }
 
-    // 2. Check Reduced Motion (Respect user accessibility settings)
+    // 2. Check Battery / Power (Simplified)
+    // Note: 'prefers-reduced-motion' is often used as a proxy for "Save Battery" on OS level
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const handleMotionChange = (e: MediaQueryListEvent) => setIsLowPower(e.matches);
+    
+    // Initial Check
     setIsLowPower(mediaQuery.matches);
+    
+    // Listen
     mediaQuery.addEventListener('change', handleMotionChange);
 
     return () => mediaQuery.removeEventListener('change', handleMotionChange);
@@ -62,53 +67,60 @@ function useSmartEnvironment() {
 export default function HeroSection() {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [isMuted, setIsMuted] = useState(true); // Autoplay MUST start muted
+  const [isMuted, setIsMuted] = useState(true);
   const [progress, setProgress] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
   
+  // NEW: Manual Override State
+  const [userOverride, setUserOverride] = useState(false); 
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const playPromiseRef = useRef<Promise<void> | null>(null); // THE TRAFFIC COP
+  const playPromiseRef = useRef<Promise<void> | null>(null);
 
   const { isLowData, isLowPower } = useSmartEnvironment();
 
   const activeMedia = PLAYLIST[currentIdx];
-  // Force image mode if Low Data, otherwise respect media type
-  const effectiveType = (activeMedia.type === 'video' && isLowData) ? 'image' : activeMedia.type;
 
-  // --- LOGIC: ROBUST PLAYBACK ENGINE ---
+  // --- LOGIC: DECISION ENGINE ---
+  // If userOverride is TRUE, we ignore environment checks
+  const shouldPlayVideo = activeMedia.type === 'video' && (userOverride || (!isLowData && !isLowPower));
   
+  // Effective Type: What are we actually rendering?
+  const effectiveType = shouldPlayVideo ? 'video' : 'image';
+
+  // --- PLAYBACK ENGINE ---
   const safePlay = useCallback(async () => {
     const video = videoRef.current;
-    if (!video || isLowPower) return;
+    if (!video) return;
 
-    // 1. If we are already loading a play request, do nothing (Prevent Race Condition)
-    if (playPromiseRef.current) return;
+    // FIX: Only block if env is bad AND user hasn't overridden
+    if ((isLowPower || isLowData) && !userOverride) return;
 
-    // 2. Only try to play if paused
+    if (playPromiseRef.current) return; // Prevent race conditions
+
     if (video.paused) {
       try {
         playPromiseRef.current = video.play();
         await playPromiseRef.current;
+        setIsPlaying(true);
       } catch (err) {
-        // 3. Gracefully handle interruptions
         if ((err as Error).name !== 'AbortError') {
-          console.warn("Autoplay prevented:", err);
-          setIsPlaying(false); // Update UI to reflect reality
+          console.warn("Autoplay blocked. Waiting for user interaction.", err);
+          setIsPlaying(false);
         }
       } finally {
-        playPromiseRef.current = null; // Reset traffic cop
+        playPromiseRef.current = null;
       }
     }
-  }, [isLowPower]);
+  }, [isLowPower, isLowData, userOverride]);
 
   const safePause = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-
-    // 1. Do not interrupt a pending play request
     if (!playPromiseRef.current && !video.paused) {
       video.pause();
+      setIsPlaying(false);
     }
   }, []);
 
@@ -120,27 +132,29 @@ export default function HeroSection() {
 
   // --- 2. PROGRESS ENGINE ---
   useEffect(() => {
-    if (!isPlaying) return;
+    if (!isPlaying && effectiveType !== 'image') return; // Images always "play" their timer
 
     let progressInterval: NodeJS.Timeout;
     let slideTimeout: NodeJS.Timeout;
 
-    // IMAGE LOGIC: Simple Timer
     if (effectiveType === 'image') {
       const duration = activeMedia.duration || 5000;
       const intervalTime = 100;
       const step = 100 / (duration / intervalTime); 
       
       progressInterval = setInterval(() => {
-        setProgress((p) => Math.min(p + step, 100));
+        setProgress((p) => {
+          if (p >= 100) {
+            nextSlide();
+            return 0;
+          }
+          return p + step;
+        });
       }, intervalTime);
-
-      slideTimeout = setTimeout(nextSlide, duration);
     }
-    // VIDEO LOGIC: Handled via onTimeUpdate and onEnded events below
-    // Fallback: If video gets stuck for 10s, auto-advance (Self-Healing)
     else if (effectiveType === 'video') {
-       slideTimeout = setTimeout(nextSlide, 15000); 
+       // Watchdog: If video stalls, skip after 20s
+       slideTimeout = setTimeout(nextSlide, 20000); 
     }
 
     return () => {
@@ -154,63 +168,55 @@ export default function HeroSection() {
     if (videoRef.current && effectiveType === 'video') {
       const duration = videoRef.current.duration || 1;
       const currentTime = videoRef.current.currentTime;
-      if (duration > 0) {
-        setProgress((currentTime / duration) * 100);
-      }
+      setProgress((currentTime / duration) * 100);
     }
   };
 
-  // --- 4. VISIBILITY & VIEWPORT API ---
+  // --- 4. VISIBILITY & AUTO-PLAY ---
   useEffect(() => {
-    // A. Tab Switching Logic (Page Visibility API)
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        safePause();
-      } else if (isPlaying && effectiveType === 'video') {
-        safePlay();
-      }
-    };
+    if (effectiveType === 'video' && isPlaying) {
+      safePlay();
+    }
+  }, [effectiveType, isPlaying, safePlay]);
 
-    // B. Scroll Logic (Intersection Observer)
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        const isVisible = entry.isIntersecting;
-        setIsPlaying(isVisible);
-        
-        if (isVisible && effectiveType === 'video') safePlay();
-        else safePause();
-      },
-      { threshold: 0.5 }
-    );
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    if (containerRef.current) observer.observe(containerRef.current);
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      observer.disconnect();
-    };
-  }, [effectiveType, isPlaying, safePlay, safePause]);
-
-  // Initial Load Fade-in
+  // --- 5. INITIAL LOAD ---
   useEffect(() => setIsLoaded(true), []);
 
   const scrollToContent = () => {
     window.scrollTo({ top: window.innerHeight, behavior: 'smooth' });
   };
 
+  // --- 6. OVERRIDE HANDLER ---
+  const handleForcePlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setUserOverride(true);
+    // Slight delay to allow React to render the <video> tag
+    setTimeout(() => {
+      setIsPlaying(true);
+      if (videoRef.current) {
+        videoRef.current.muted = false; // Unmute if they explicitly asked to play
+        setIsMuted(false);
+        safePlay();
+      }
+    }, 100);
+  };
+
   return (
     <section 
       ref={containerRef} 
-      className="relative h-[100dvh] w-full overflow-hidden bg-black text-white select-none"
+      className="relative h-screen supports-[height:100dvh]:h-[100dvh] w-full overflow-hidden bg-black text-white select-none overscroll-none"
     >
       
       {/* --- MEDIA LAYER --- */}
       <div className="absolute inset-0 z-0 bg-neutral-900">
         {PLAYLIST.map((media, index) => {
           const isActive = index === currentIdx;
-          const isVideoRender = media.type === 'video' && !isLowData;
-          const srcToRender = (media.type === 'video' && isLowData) ? media.poster : media.src;
+          
+          // Logic: Render video ONLY if it's video type AND (Environment is Good OR User Overrode)
+          const isVideoRender = media.type === 'video' && shouldPlayVideo;
+          
+          // Logic: If we are in "Video Mode" but blocked by environment, show Poster
+          const srcToRender = (media.type === 'video' && !shouldPlayVideo) ? media.poster : media.src;
 
           return (
             <div 
@@ -227,16 +233,14 @@ export default function HeroSection() {
                   poster={media.poster}
                   muted={isMuted}
                   playsInline
-                  autoPlay={!isLowPower}
+                  autoPlay
                   loop={false} 
                   onTimeUpdate={isActive ? handleVideoTimeUpdate : undefined}
                   onEnded={isActive ? nextSlide : undefined}
-                  onWaiting={() => console.log("Buffering...")}
                   className="h-full w-full object-cover"
                 />
               ) : (
                 <div className="relative h-full w-full overflow-hidden">
-                  {/* Optimized Image with Next/Image or standard img for max compatibility in loops */}
                   <img 
                     src={srcToRender} 
                     alt="Hero Visual"
@@ -246,10 +250,33 @@ export default function HeroSection() {
                     )}
                   />
                   
-                  {/* Low Data Badge */}
-                  {media.type === 'video' && isLowData && isActive && (
-                    <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md text-white/70 text-[10px] px-2 py-1 rounded border border-white/10 flex items-center gap-1 z-20">
-                      <WifiOff size={10} /> Data Saver
+                  {/* ENVIRONMENT WARNING & OVERRIDE */}
+                  {media.type === 'video' && isActive && !userOverride && (
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-500">
+                      
+                      <div className="bg-black/40 backdrop-blur-md border border-white/10 p-6 rounded-2xl flex flex-col items-center text-center max-w-xs">
+                        {isLowData ? (
+                           <WifiOff size={32} className="text-white/80 mb-2" />
+                        ) : (
+                           <BatteryWarning size={32} className="text-white/80 mb-2" />
+                        )}
+                        
+                        <h3 className="text-sm font-bold uppercase tracking-widest mb-1">
+                          {isLowData ? 'Data Saver Active' : 'Power Saver Mode'}
+                        </h3>
+                        <p className="text-xs text-white/60 mb-4">
+                          Autoplay paused to save resources.
+                        </p>
+
+                        <button 
+                          onClick={handleForcePlay}
+                          className="flex items-center gap-2 bg-white text-black px-5 py-2 text-xs font-black uppercase tracking-widest hover:scale-105 transition-transform"
+                        >
+                          <Play size={12} fill="currentColor" />
+                          Load Video
+                        </button>
+                      </div>
+
                     </div>
                   )}
                 </div>
@@ -265,6 +292,7 @@ export default function HeroSection() {
 
       {/* --- CONTENT LAYER --- */}
       <div className="relative z-20 h-full flex flex-col items-center justify-center text-center px-4 pt-20">
+        {/* Only show text if NOT manually playing video (cleaner look) OR keep it for branding */}
         <div className="overflow-hidden mix-blend-screen">
           <h1 className="text-6xl md:text-9xl font-black uppercase tracking-tighter mb-2 leading-[0.8] animate-in slide-in-from-bottom-20 duration-1000 delay-300 drop-shadow-2xl relative">
             <span className="relative inline-block">Nairobi</span>
@@ -303,6 +331,13 @@ export default function HeroSection() {
       </div>
 
       <div className="absolute bottom-8 right-8 z-30 flex items-center gap-4">
+        {/* Manual Quality Toggle (Optional) */}
+        {!userOverride && (isLowData || isLowPower) && (
+          <div className="text-[10px] uppercase font-bold text-white/50 border border-white/20 px-2 py-1 rounded">
+            Eco Mode
+          </div>
+        )}
+
         {/* Mute Toggle */}
         {effectiveType === 'video' && (
           <button 
