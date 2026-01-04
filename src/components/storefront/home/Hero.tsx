@@ -10,7 +10,7 @@ const PLAYLIST = [
   {
     id: 1,
     type: 'video',
-    src: '/nswHero.mp4', 
+    src: 'https://ewxf0eupwexd82yb.public.blob.vercel-storage.com/nswHero.mp4', 
     poster: 'https://images.unsplash.com/photo-1483985988355-763728e1935b?q=80&w=2070',
     duration: 0, 
   },
@@ -48,10 +48,10 @@ function useSmartEnvironment() {
     }
 
     // 2. Check Battery / Power
+    // We only assume Low Power if the OS explicitly tells us
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const handleMotionChange = (e: MediaQueryListEvent) => setIsLowPower(e.matches);
     
-    // Initial Check & Listen
     setIsLowPower(mediaQuery.matches);
     mediaQuery.addEventListener('change', handleMotionChange);
 
@@ -68,9 +68,9 @@ export default function HeroSection() {
   const [progress, setProgress] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
   
-  // NEW: Error & Override States
+  // ERROR HANDLING
   const [userOverride, setUserOverride] = useState(false); 
-  const [videoError, setVideoError] = useState(false); // <--- FALLBACK TRIGGER
+  const [videoError, setVideoError] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -79,15 +79,14 @@ export default function HeroSection() {
   const { isLowData, isLowPower } = useSmartEnvironment();
   const activeMedia = PLAYLIST[currentIdx];
 
-  // --- LOGIC: DECISION ENGINE ---
-  // We play video IF: (It's a video) AND (Environment is OK OR User Overrode) AND (No Playback Errors)
+  // LOGIC: Play video IF (Video Type) AND (Env OK OR User Forced) AND (No Error)
   const shouldPlayVideo = activeMedia.type === 'video' 
     && (userOverride || (!isLowData && !isLowPower))
     && !videoError;
   
   const effectiveType = shouldPlayVideo ? 'video' : 'image';
 
-  // --- RESET ERROR ON SLIDE CHANGE ---
+  // RESET ERROR on slide change
   useEffect(() => {
     setVideoError(false);
   }, [currentIdx]);
@@ -97,7 +96,6 @@ export default function HeroSection() {
     const video = videoRef.current;
     if (!video) return;
 
-    // Strict Block: Don't even try if env is bad (unless overridden)
     if ((isLowPower || isLowData) && !userOverride) return;
 
     if (playPromiseRef.current) return; 
@@ -108,13 +106,11 @@ export default function HeroSection() {
         await playPromiseRef.current;
         setIsPlaying(true);
       } catch (err) {
-        // IGNORE: AbortError (happens when component unmounts quickly)
         if ((err as Error).name === 'AbortError') return;
 
-        // CRITICAL: Fallback logic
-        console.warn("Autoplay failed. Falling back to poster slideshow.", err);
-        setVideoError(true); // <--- This switches the view to 'Image Mode' instantly
-        setIsPlaying(true);  // Keep 'playing' state true so slideshow timer runs
+        console.warn("Autoplay failed. Falling back to poster.", err);
+        setVideoError(true); 
+        setIsPlaying(true);  
       } finally {
         playPromiseRef.current = null;
       }
@@ -130,22 +126,20 @@ export default function HeroSection() {
     }
   }, []);
 
-  // --- 1. SLIDE MANAGER ---
+  // --- SLIDE & PROGRESS ---
   const nextSlide = useCallback(() => {
     setProgress(0);
     setCurrentIdx((prev) => (prev + 1) % PLAYLIST.length);
   }, []);
 
-  // --- 2. PROGRESS ENGINE ---
   useEffect(() => {
-    // If paused, do nothing (unless it's an image/poster fallback, which basically always "plays")
     if (!isPlaying && effectiveType !== 'image') return; 
 
     let progressInterval: NodeJS.Timeout;
     let slideTimeout: NodeJS.Timeout;
 
     if (effectiveType === 'image') {
-      const duration = activeMedia.duration || 5000; // Default 5s for poster fallback
+      const duration = activeMedia.duration || 5000;
       const intervalTime = 100;
       const step = 100 / (duration / intervalTime); 
       
@@ -160,7 +154,6 @@ export default function HeroSection() {
       }, intervalTime);
     }
     else if (effectiveType === 'video') {
-       // Watchdog: If video stalls, skip after 25s
        slideTimeout = setTimeout(nextSlide, 25000); 
     }
 
@@ -170,7 +163,6 @@ export default function HeroSection() {
     };
   }, [currentIdx, isPlaying, effectiveType, activeMedia.duration, nextSlide]);
 
-  // --- 3. VIDEO EVENTS ---
   const handleVideoTimeUpdate = () => {
     if (videoRef.current && effectiveType === 'video') {
       const duration = videoRef.current.duration || 1;
@@ -179,25 +171,22 @@ export default function HeroSection() {
     }
   };
 
-  // --- 4. VISIBILITY & AUTO-PLAY ---
   useEffect(() => {
     if (effectiveType === 'video' && isPlaying) {
       safePlay();
     }
   }, [effectiveType, isPlaying, safePlay]);
 
-  // --- 5. INITIAL LOAD ---
   useEffect(() => setIsLoaded(true), []);
 
   const scrollToContent = () => {
     window.scrollTo({ top: window.innerHeight, behavior: 'smooth' });
   };
 
-  // --- 6. OVERRIDE HANDLER ---
   const handleForcePlay = (e: React.MouseEvent) => {
     e.stopPropagation();
     setUserOverride(true);
-    setVideoError(false); // Reset error to try again
+    setVideoError(false);
     setTimeout(() => {
       setIsPlaying(true);
       if (videoRef.current) {
@@ -211,18 +200,16 @@ export default function HeroSection() {
   return (
     <section 
       ref={containerRef} 
-      className="relative h-screen supports-[height:100dvh]:h-[100dvh] w-full overflow-hidden bg-black text-white select-none overscroll-none touch-none"
+      // REMOVED 'touch-none' to fix mobile scrolling
+      className="relative h-screen supports-[height:100dvh]:h-[100dvh] w-full overflow-hidden bg-black text-white select-none overscroll-none"
     >
       
       {/* --- MEDIA LAYER --- */}
       <div className="absolute inset-0 z-0 bg-neutral-900">
         {PLAYLIST.map((media, index) => {
           const isActive = index === currentIdx;
-          
-          // Render video ONLY if logic permits
           const isVideoRender = media.type === 'video' && shouldPlayVideo;
-          
-          // If video is blocked/failed, use poster
+          // Fallback Logic:
           const srcToRender = (media.type === 'video' && !shouldPlayVideo) ? media.poster : media.src;
 
           return (
@@ -257,25 +244,21 @@ export default function HeroSection() {
                     )}
                   />
                   
-                  {/* SHOW WARNING ONLY IF: Video Type + Active + No Override + NO ERROR */}
-                  {/* If there is a video error, we just silently show the poster (fallback) without annoying the user */}
+                  {/* Warning only shows if NO error occurred yet */}
                   {media.type === 'video' && isActive && !userOverride && !videoError && (
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-500">
-                      
                       <div className="bg-black/40 backdrop-blur-md border border-white/10 p-6 rounded-2xl flex flex-col items-center text-center max-w-xs">
                         {isLowData ? (
                            <WifiOff size={32} className="text-white/80 mb-2" />
                         ) : (
                            <BatteryWarning size={32} className="text-white/80 mb-2" />
                         )}
-                        
                         <h3 className="text-sm font-bold uppercase tracking-widest mb-1">
                           {isLowData ? 'Data Saver Active' : 'Power Saver Mode'}
                         </h3>
                         <p className="text-xs text-white/60 mb-4">
                           Autoplay paused to save resources.
                         </p>
-
                         <button 
                           onClick={handleForcePlay}
                           className="flex items-center gap-2 bg-white text-black px-5 py-2 text-xs font-black uppercase tracking-widest hover:scale-105 transition-transform"
@@ -284,7 +267,6 @@ export default function HeroSection() {
                           Load Video
                         </button>
                       </div>
-
                     </div>
                   )}
                 </div>
@@ -338,14 +320,12 @@ export default function HeroSection() {
       </div>
 
       <div className="absolute bottom-8 right-8 z-30 flex items-center gap-4">
-        {/* Manual Quality Toggle (Optional) */}
         {!userOverride && (isLowData || isLowPower) && !videoError && (
           <div className="text-[10px] uppercase font-bold text-white/50 border border-white/20 px-2 py-1 rounded">
             Eco Mode
           </div>
         )}
 
-        {/* Mute Toggle */}
         {effectiveType === 'video' && (
           <button 
             onClick={() => setIsMuted(!isMuted)}
@@ -355,7 +335,6 @@ export default function HeroSection() {
           </button>
         )}
         
-        {/* Play/Pause Toggle */}
         <button 
           onClick={() => {
             if (isPlaying) safePause();
