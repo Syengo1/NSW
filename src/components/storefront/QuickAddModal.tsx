@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom'; // IMPORT PORTAL
 import { X, ShoppingBag, Check } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { useCartStore } from '@/lib/store/cart';
@@ -35,9 +36,15 @@ export default function QuickAddModal({ isOpen, onClose, product, variants }: Qu
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [mounted, setMounted] = useState(false); // New: Track hydration
 
-  // 1. INTELLIGENT DEFAULTS
-  // When modal opens, auto-select the first available color to save a click
+  // 1. HYDRATION CHECK
+  // We can only access 'document.body' after component mounts on the client
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // 2. INTELLIGENT DEFAULTS
   useEffect(() => {
     if (isOpen && variants.length > 0) {
       const uniqueColors = Array.from(new Set(variants.map(v => v.color)));
@@ -46,26 +53,33 @@ export default function QuickAddModal({ isOpen, onClose, product, variants }: Qu
     }
   }, [isOpen, variants]);
 
-  // 2. DYNAMIC COMPUTED LISTS
+  // 3. KEYBOARD ESCAPE LISTENER
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onClose]);
+
+  // --- LOGIC: COMPUTED LISTS ---
   const uniqueColors = useMemo(() => Array.from(new Set(variants.map(v => v.color))), [variants]);
   
   const availableSizes = useMemo(() => {
     if (!selectedColor) return [];
-    // Only show sizes that exist for this specific color
     return variants.filter(v => v.color === selectedColor);
   }, [selectedColor, variants]);
 
   const selectedVariant = variants.find(v => v.id === selectedVariantId);
   
-  // 3. SMART PRICING ENGINE
-  // Handle sale prices and specific variant adjustments (e.g. XXL costs more)
   const basePriceToUse = product.salePrice ?? product.price;
   const currentPrice = basePriceToUse + (selectedVariant?.price_adjustment || 0);
   const originalPrice = product.price + (selectedVariant?.price_adjustment || 0);
   const isOnSale = product.salePrice != null && product.salePrice < product.price;
   const isOutOfStock = selectedVariant && selectedVariant.stock_quantity === 0;
 
-  if (!isOpen) return null;
+  // Don't render until client-side (mounted)
+  if (!isOpen || !mounted) return null;
 
   const handleAddToCart = () => {
     if (!selectedVariant) return;
@@ -89,17 +103,20 @@ export default function QuickAddModal({ isOpen, onClose, product, variants }: Qu
     
     setTimeout(() => {
       setIsAdding(false);
-      onClose(); // Auto-close for flow
+      onClose();
     }, 500);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+  // 4. USE PORTAL TO BREAK OUT OF PARENT TRANSFORMS
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+      {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" 
         onClick={onClose}
       />
 
+      {/* Modal Content */}
       <div className="relative w-full max-w-md bg-white dark:bg-zinc-950 rounded-xl shadow-2xl border border-white/10 overflow-hidden animate-in slide-in-from-bottom-10 md:zoom-in-95 duration-300">
         
         {/* Header */}
@@ -219,6 +236,7 @@ export default function QuickAddModal({ isOpen, onClose, product, variants }: Qu
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body // RENDER TARGET
   );
 }
