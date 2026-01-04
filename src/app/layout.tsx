@@ -1,13 +1,52 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Inter, Oswald } from "next/font/google"; // 1. Import Oswald
 import "./globals.css";
-import { ThemeProvider } from "@/components/theme-provider"; // <--- Import this
+import { ThemeProvider } from "@/components/theme-provider";
 
-const inter = Inter({ subsets: ["latin"] });
+// 2. Configure Fonts with CSS Variables
+// This injects the font data into the CSS variables your globals.css expects
+const inter = Inter({ 
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
 
+const oswald = Oswald({ 
+  subsets: ["latin"],
+  variable: "--font-oswald", // Matches the var(--font-oswald) in your CSS
+  display: "swap",
+});
+
+// 3. World Class Metadata Configuration
 export const metadata: Metadata = {
-  title: "Nairobi Streetwear",
-  description: "Premium Streetwear from Nairobi",
+  title: {
+    default: "Nairobi Streetwear | Redefining The Culture",
+    template: "%s | Nairobi Streetwear"
+  },
+  description: "Premium streetwear crafted for the bold. Est. 2026 in Nairobi. Limited drops, exclusive fabrics, and authentic culture.",
+  keywords: ["Streetwear", "Nairobi", "Kenya", "Fashion", "Drops", "Hoodies", "Urban Culture"],
+  authors: [{ name: "Nairobi Streetwear" }],
+  openGraph: {
+    type: "website",
+    locale: "en_KE",
+    siteName: "Nairobi Streetwear",
+    title: "Nairobi Streetwear",
+    description: "Premium streetwear crafted for the bold.",
+  },
+  icons: {
+    icon: "/favicon.ico",
+  },
+};
+
+// 4. Mobile Viewport & Theme Colors
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#09090b" }, // Zinc-950
+  ],
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1, // Prevents auto-zoom on inputs for a "native app" feel
 };
 
 export default function RootLayout({
@@ -16,10 +55,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // Add suppressHydrationWarning to html tag to prevent mismatches
-    <html lang="en" suppressHydrationWarning> 
-      <body className={inter.className}>
-        {/* Wrap everything inside the body with ThemeProvider */}
+    <html lang="en" suppressHydrationWarning>
+      <body 
+        className={`
+          ${inter.variable} 
+          ${oswald.variable} 
+          font-sans 
+          antialiased 
+          bg-background 
+          text-foreground
+        `}
+      >
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

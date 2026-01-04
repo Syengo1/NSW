@@ -1,103 +1,158 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { ArrowDown, Pause, Play, Volume2, VolumeX } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { ArrowDown, Pause, Play, Volume2, VolumeX, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 
-// --- CONFIG: HYBRID PLAYLIST ---
+// --- CONFIG: DATA SOURCES ---
 const PLAYLIST = [
   {
     id: 1,
     type: 'video',
-    src: 'https://cdn.coverr.co/videos/coverr-walking-in-a-fashion-show-2656/1080p.mp4',
+    src: '/nswHero.mp4',
     poster: 'https://images.unsplash.com/photo-1483985988355-763728e1935b?q=80&w=2070',
-    duration: 0, 
+    duration: 0, // Video duration is dynamic
   },
   {
     id: 2,
     type: 'image',
     src: 'https://images.unsplash.com/photo-1523396860124-baf00bc49636?q=80&w=2163',
-    duration: 6000, 
+    duration: 3000, 
   },
   {
     id: 3,
     type: 'image',
     src: 'https://images.unsplash.com/photo-1552374196-1ab2a1c593e8?q=80&w=2000',
-    duration: 6000,
+    duration: 3000,
   }
 ];
+
+// --- HOOK: ENVIRONMENT AWARENESS ---
+function useSmartEnvironment() {
+  const [isLowPower, setIsLowPower] = useState(false);
+  const [isLowData, setIsLowData] = useState(false);
+
+  useEffect(() => {
+    // 1. Check Network Status
+    if (typeof navigator !== 'undefined' && 'connection' in navigator) {
+      const conn = (navigator as any).connection;
+      const checkConnection = () => {
+        if (conn.saveData || conn.effectiveType === '2g' || conn.effectiveType === 'slow-2g') {
+          setIsLowData(true);
+        }
+      };
+      checkConnection();
+      conn.addEventListener('change', checkConnection);
+      return () => conn.removeEventListener('change', checkConnection);
+    }
+
+    // 2. Check Reduced Motion (Respect user accessibility settings)
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const handleMotionChange = (e: MediaQueryListEvent) => setIsLowPower(e.matches);
+    setIsLowPower(mediaQuery.matches);
+    mediaQuery.addEventListener('change', handleMotionChange);
+
+    return () => mediaQuery.removeEventListener('change', handleMotionChange);
+  }, []);
+
+  return { isLowPower, isLowData };
+}
 
 export default function HeroSection() {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(true); // Autoplay MUST start muted
   const [progress, setProgress] = useState(0);
+  const [isLoaded, setIsLoaded] = useState(false);
+  
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const playPromiseRef = useRef<Promise<void> | null>(null); // THE TRAFFIC COP
+
+  const { isLowData, isLowPower } = useSmartEnvironment();
 
   const activeMedia = PLAYLIST[currentIdx];
+  // Force image mode if Low Data, otherwise respect media type
+  const effectiveType = (activeMedia.type === 'video' && isLowData) ? 'image' : activeMedia.type;
 
-  // --- HELPER: SAFE PLAY ---
-  // Fixes "The play() request was interrupted by a call to pause()"
-  const safePlay = async () => {
-    if (videoRef.current && videoRef.current.paused) {
+  // --- LOGIC: ROBUST PLAYBACK ENGINE ---
+  
+  const safePlay = useCallback(async () => {
+    const video = videoRef.current;
+    if (!video || isLowPower) return;
+
+    // 1. If we are already loading a play request, do nothing (Prevent Race Condition)
+    if (playPromiseRef.current) return;
+
+    // 2. Only try to play if paused
+    if (video.paused) {
       try {
-        await videoRef.current.play();
+        playPromiseRef.current = video.play();
+        await playPromiseRef.current;
       } catch (err) {
-        // Ignore abort errors caused by rapid scrolling
+        // 3. Gracefully handle interruptions
         if ((err as Error).name !== 'AbortError') {
-          console.error("Video playback failed", err);
+          console.warn("Autoplay prevented:", err);
+          setIsPlaying(false); // Update UI to reflect reality
         }
+      } finally {
+        playPromiseRef.current = null; // Reset traffic cop
       }
     }
-  };
+  }, [isLowPower]);
 
-  const safePause = () => {
-    if (videoRef.current && !videoRef.current.paused) {
-      videoRef.current.pause();
+  const safePause = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // 1. Do not interrupt a pending play request
+    if (!playPromiseRef.current && !video.paused) {
+      video.pause();
     }
-  };
+  }, []);
 
-  // --- 1. SMART PLAYBACK ENGINE ---
+  // --- 1. SLIDE MANAGER ---
+  const nextSlide = useCallback(() => {
+    setProgress(0);
+    setCurrentIdx((prev) => (prev + 1) % PLAYLIST.length);
+  }, []);
+
+  // --- 2. PROGRESS ENGINE ---
   useEffect(() => {
     if (!isPlaying) return;
 
     let progressInterval: NodeJS.Timeout;
     let slideTimeout: NodeJS.Timeout;
 
-    const nextSlide = () => {
-      setProgress(0);
-      setCurrentIdx((prev) => (prev + 1) % PLAYLIST.length);
-    };
-
-    if (activeMedia.type === 'image') {
+    // IMAGE LOGIC: Simple Timer
+    if (effectiveType === 'image') {
       const duration = activeMedia.duration || 5000;
-      const step = 100 / (duration / 100); 
+      const intervalTime = 100;
+      const step = 100 / (duration / intervalTime); 
       
       progressInterval = setInterval(() => {
         setProgress((p) => Math.min(p + step, 100));
-      }, 100);
+      }, intervalTime);
 
       slideTimeout = setTimeout(nextSlide, duration);
-
-    } else if (activeMedia.type === 'video') {
-      if (videoRef.current) {
-        videoRef.current.currentTime = 0;
-        safePlay(); // Use safe play wrapper
-      }
+    }
+    // VIDEO LOGIC: Handled via onTimeUpdate and onEnded events below
+    // Fallback: If video gets stuck for 10s, auto-advance (Self-Healing)
+    else if (effectiveType === 'video') {
+       slideTimeout = setTimeout(nextSlide, 15000); 
     }
 
     return () => {
       clearInterval(progressInterval);
       clearTimeout(slideTimeout);
     };
-  }, [currentIdx, isPlaying, activeMedia.type]); // Added activeMedia.type for stability
+  }, [currentIdx, isPlaying, effectiveType, activeMedia.duration, nextSlide]);
 
-  // --- 2. VIDEO EVENTS ---
+  // --- 3. VIDEO EVENTS ---
   const handleVideoTimeUpdate = () => {
-    if (videoRef.current && activeMedia.type === 'video') {
-      const duration = videoRef.current.duration;
+    if (videoRef.current && effectiveType === 'video') {
+      const duration = videoRef.current.duration || 1;
       const currentTime = videoRef.current.currentTime;
       if (duration > 0) {
         setProgress((currentTime / duration) * 100);
@@ -105,28 +160,40 @@ export default function HeroSection() {
     }
   };
 
-  const handleVideoEnded = () => {
-    setCurrentIdx((prev) => (prev + 1) % PLAYLIST.length);
-  };
-
-  // --- 3. PERFORMANCE AWARENESS (IntersectionObserver) ---
+  // --- 4. VISIBILITY & VIEWPORT API ---
   useEffect(() => {
+    // A. Tab Switching Logic (Page Visibility API)
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        safePause();
+      } else if (isPlaying && effectiveType === 'video') {
+        safePlay();
+      }
+    };
+
+    // B. Scroll Logic (Intersection Observer)
     const observer = new IntersectionObserver(
       ([entry]) => {
-        setIsPlaying(entry.isIntersecting);
+        const isVisible = entry.isIntersecting;
+        setIsPlaying(isVisible);
         
-        if (entry.isIntersecting) {
-          if (activeMedia.type === 'video') safePlay();
-        } else {
-          safePause();
-        }
+        if (isVisible && effectiveType === 'video') safePlay();
+        else safePause();
       },
       { threshold: 0.5 }
     );
 
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     if (containerRef.current) observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, [activeMedia.type]); // Re-bind if media type changes
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      observer.disconnect();
+    };
+  }, [effectiveType, isPlaying, safePlay, safePause]);
+
+  // Initial Load Fade-in
+  useEffect(() => setIsLoaded(true), []);
 
   const scrollToContent = () => {
     window.scrollTo({ top: window.innerHeight, behavior: 'smooth' });
@@ -135,60 +202,74 @@ export default function HeroSection() {
   return (
     <section 
       ref={containerRef} 
-      className="relative h-screen w-full overflow-hidden bg-black text-white select-none"
+      className="relative h-[100dvh] w-full overflow-hidden bg-black text-white select-none"
     >
       
       {/* --- MEDIA LAYER --- */}
-      <div className="absolute inset-0 z-0">
+      <div className="absolute inset-0 z-0 bg-neutral-900">
         {PLAYLIST.map((media, index) => {
           const isActive = index === currentIdx;
+          const isVideoRender = media.type === 'video' && !isLowData;
+          const srcToRender = (media.type === 'video' && isLowData) ? media.poster : media.src;
+
           return (
             <div 
               key={media.id}
               className={cn(
-                "absolute inset-0 transition-opacity duration-1000 ease-in-out",
+                "absolute inset-0 transition-opacity duration-1000 ease-in-out will-change-opacity",
                 isActive ? "opacity-100 z-10" : "opacity-0 z-0"
               )}
             >
-              {media.type === 'video' ? (
+              {isVideoRender ? (
                 <video
                   ref={isActive ? videoRef : null}
+                  src={media.src as string}
+                  poster={media.poster}
                   muted={isMuted}
                   playsInline
-                  loop={false} // We handle looping manually via onEnded
-                  poster={media.poster}
+                  autoPlay={!isLowPower}
+                  loop={false} 
                   onTimeUpdate={isActive ? handleVideoTimeUpdate : undefined}
-                  onEnded={isActive ? handleVideoEnded : undefined}
+                  onEnded={isActive ? nextSlide : undefined}
+                  onWaiting={() => console.log("Buffering...")}
                   className="h-full w-full object-cover"
                 />
               ) : (
                 <div className="relative h-full w-full overflow-hidden">
+                  {/* Optimized Image with Next/Image or standard img for max compatibility in loops */}
                   <img 
-                    src={media.src} 
-                    alt="Hero"
+                    src={srcToRender} 
+                    alt="Hero Visual"
                     className={cn(
-                      "h-full w-full object-cover transition-transform duration-[10000ms] ease-out",
-                      isActive ? "scale-110" : "scale-100"
+                      "h-full w-full object-cover transition-transform duration-[10000ms] ease-out will-change-transform",
+                      isActive && isLoaded ? "scale-110" : "scale-100"
                     )}
                   />
+                  
+                  {/* Low Data Badge */}
+                  {media.type === 'video' && isLowData && isActive && (
+                    <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md text-white/70 text-[10px] px-2 py-1 rounded border border-white/10 flex items-center gap-1 z-20">
+                      <WifiOff size={10} /> Data Saver
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           );
         })}
         
-        {/* Cinematic Grain */}
+        {/* Cinematic Overlays */}
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none z-10 brightness-100 contrast-150 mix-blend-overlay" />
-        
-        {/* Gradient Scrim */}
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent z-10" />
       </div>
 
       {/* --- CONTENT LAYER --- */}
       <div className="relative z-20 h-full flex flex-col items-center justify-center text-center px-4 pt-20">
-        <div className="overflow-hidden">
-          <h1 className="text-6xl md:text-9xl font-black uppercase tracking-tighter mb-2 leading-[0.8] animate-in slide-in-from-bottom-20 duration-1000 delay-300 drop-shadow-2xl">
-            Nairobi <br className="md:hidden"/> Streetwear
+        <div className="overflow-hidden mix-blend-screen">
+          <h1 className="text-6xl md:text-9xl font-black uppercase tracking-tighter mb-2 leading-[0.8] animate-in slide-in-from-bottom-20 duration-1000 delay-300 drop-shadow-2xl relative">
+            <span className="relative inline-block">Nairobi</span>
+            <br className="md:hidden"/> 
+            <span className="relative inline-block md:ml-4">Streetwear</span>
           </h1>
         </div>
         
@@ -214,15 +295,16 @@ export default function HeroSection() {
       </div>
 
       {/* --- CONTROLS --- */}
-      <div className="absolute bottom-0 left-0 h-1 bg-white/20 w-full z-30">
+      <div className="absolute bottom-0 left-0 h-1 bg-white/10 w-full z-30">
         <div 
-          className="h-full bg-white shadow-[0_0_10px_white] transition-all duration-100 ease-linear"
+          className="h-full bg-white shadow-[0_0_15px_white] transition-all duration-100 ease-linear"
           style={{ width: `${progress}%` }}
         />
       </div>
 
       <div className="absolute bottom-8 right-8 z-30 flex items-center gap-4">
-        {activeMedia.type === 'video' && (
+        {/* Mute Toggle */}
+        {effectiveType === 'video' && (
           <button 
             onClick={() => setIsMuted(!isMuted)}
             className="p-2 rounded-full border border-white/20 bg-black/20 backdrop-blur-md hover:bg-white hover:text-black transition-all"
@@ -230,6 +312,8 @@ export default function HeroSection() {
             {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
           </button>
         )}
+        
+        {/* Play/Pause Toggle */}
         <button 
           onClick={() => {
             if (isPlaying) safePause();
@@ -244,7 +328,7 @@ export default function HeroSection() {
 
       <button 
         onClick={scrollToContent}
-        className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20 text-white/50 hover:text-white transition-colors animate-bounce"
+        className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20 text-white/50 hover:text-white transition-colors animate-bounce cursor-pointer"
       >
         <ArrowDown size={32} strokeWidth={1} />
       </button>

@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useCartStore } from '@/lib/store/cart';
-import { X, Plus, Minus, Trash2, ArrowRight, ShoppingBag, Truck, AlertCircle } from 'lucide-react';
+import { X, Plus, Minus, Trash2, ArrowRight, ShoppingBag, Truck, AlertCircle, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function CartDrawer() {
@@ -13,7 +13,6 @@ export default function CartDrawer() {
 
   useEffect(() => {
     setMounted(true);
-    // Lock body scroll ONLY when open
     if (isOpen) {
       document.body.style.overflow = 'hidden';
     } else {
@@ -23,11 +22,9 @@ export default function CartDrawer() {
   }, [isOpen]);
 
   // --- SMART CALCULATIONS ---
-  // Memoize these to avoid recalculating on every render
   const { totalCents, totalSavingsCents } = useMemo(() => {
     const total = getCartTotal();
     const savings = items.reduce((acc, item) => {
-      // If original price exists and is higher than selling price, calculate difference
       if (item.originalPrice && item.originalPrice > item.price) {
         return acc + ((item.originalPrice - item.price) * item.quantity);
       }
@@ -36,7 +33,7 @@ export default function CartDrawer() {
     return { totalCents: total, totalSavingsCents: savings };
   }, [items, getCartTotal]);
 
-  const shippingThresholdCents = 10000 * 100; // KES 10,000
+  const shippingThresholdCents = 10000 * 100; // KES 10,000 threshold
   const progress = Math.min((totalCents / shippingThresholdCents) * 100, 100);
   const remaining = shippingThresholdCents - totalCents;
 
@@ -49,8 +46,6 @@ export default function CartDrawer() {
         isOpen ? "pointer-events-auto" : "pointer-events-none"
       )}
     >
-      
-      {/* 1. BACKDROP */}
       <div 
         className={cn(
           "fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300 ease-in-out",
@@ -59,10 +54,9 @@ export default function CartDrawer() {
         onClick={closeCart}
       />
 
-      {/* 2. DRAWER PANEL */}
       <div 
         className={cn(
-          "relative w-full max-w-[420px] h-full bg-background border-l border-border shadow-2xl transform transition-transform duration-300 ease-out flex flex-col",
+          "relative w-full max-w-[420px] h-full bg-background border-l border-border shadow-2xl transform transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] flex flex-col",
           isOpen ? "translate-x-0" : "translate-x-full"
         )}
         style={{ pointerEvents: 'auto' }}
@@ -76,54 +70,55 @@ export default function CartDrawer() {
               {items.length}
             </span>
           </h2>
-          <button 
-            onClick={closeCart} 
-            className="p-2 hover:bg-secondary rounded-full transition-colors text-muted-foreground hover:text-foreground active:scale-95"
-          >
+          <button onClick={closeCart} className="p-2 hover:bg-secondary rounded-full transition-colors">
             <X size={20} />
           </button>
         </div>
 
-        {/* FREE SHIPPING BAR */}
+        {/* SMART SHIPPING BAR */}
         <div className="px-6 py-4 bg-secondary/30 border-b border-border">
           <div className="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider">
             <Truck size={14} className={progress === 100 ? "text-emerald-500" : "text-foreground"} />
             {progress === 100 ? (
-              <span className="text-emerald-500 animate-pulse">Free Shipping Unlocked!</span>
-            ) : (
-              <span>
-                Add <span className="text-foreground font-mono">KES {(remaining / 100).toLocaleString()}</span> for Free Shipping
+              <span className="text-emerald-500 animate-pulse flex items-center gap-1">
+                 <Sparkles size={12} /> Free Shipping Unlocked!
               </span>
+            ) : (
+              <span>Add <span className="text-foreground font-mono">KES {(remaining / 100).toLocaleString()}</span> for Free Shipping</span>
             )}
           </div>
-          <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
-            <div 
-              className={cn(
-                "h-full transition-all duration-700 ease-out",
-                progress === 100 ? "bg-emerald-500" : "bg-foreground"
-              )}
-              style={{ width: `${progress}%` }}
-            />
+          <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden relative">
+             <div 
+               className={cn(
+                 "h-full transition-all duration-700 ease-out relative overflow-hidden",
+                 progress === 100 ? "bg-emerald-500" : "bg-foreground"
+               )}
+               style={{ width: `${progress}%` }}
+             >
+             </div>
           </div>
         </div>
 
-        {/* ITEMS LIST */}
+        {/* ITEMS */}
         <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-hide">
           {items.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center space-y-6 opacity-60">
-              <div className="w-20 h-20 bg-secondary rounded-full flex items-center justify-center mb-2 animate-in zoom-in duration-300">
-                 <ShoppingBag size={40} className="text-muted-foreground" />
+              <div className="w-24 h-24 bg-secondary rounded-full flex items-center justify-center mb-2 animate-in zoom-in duration-300">
+                 <ShoppingBag size={48} className="text-muted-foreground" />
               </div>
               <div>
-                <p className="text-lg font-black uppercase tracking-tighter">Your bag is empty</p>
-                <p className="text-sm text-muted-foreground mt-2">Looks like you haven't found your fit yet.</p>
+                <p className="text-xl font-black uppercase tracking-tighter">Your bag is empty</p>
+                <p className="text-sm text-muted-foreground mt-2 max-w-[200px] mx-auto">
+                   The streets are waiting. Find your fit.
+                </p>
               </div>
-              <button 
+              <Link 
+                href="/shop" 
                 onClick={closeCart}
-                className="text-xs font-bold border-b border-foreground pb-0.5 hover:opacity-50 transition-opacity uppercase tracking-widest"
+                className="px-8 py-3 bg-foreground text-background font-bold uppercase tracking-widest text-xs hover:scale-105 transition-transform rounded-sm"
               >
-                Start Browsing
-              </button>
+                Shop New Drops
+              </Link>
             </div>
           ) : (
             items.map((item) => {
@@ -131,26 +126,15 @@ export default function CartDrawer() {
               const isMaxStock = item.quantity >= item.maxStock;
 
               return (
-                <div key={item.variantId} className="flex gap-4 group animate-in slide-in-from-bottom-2 duration-500">
-                  
-                  {/* Product Image */}
+                <div key={item.variantId} className="flex gap-4 group animate-in slide-in-from-right duration-500">
                   <div className="relative h-32 w-24 bg-secondary overflow-hidden border border-border shrink-0 rounded-sm">
-                    <img 
-                      src={item.image} 
-                      alt={item.name} 
-                      className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500" 
-                    />
+                    <img src={item.image} alt={item.name} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500" />
                     {isOnSale && (
-                      <div className="absolute top-0 left-0 bg-red-600 text-white text-[9px] font-black px-1.5 py-0.5 uppercase tracking-wide">
-                        Sale
-                      </div>
+                      <div className="absolute top-0 left-0 bg-red-600 text-white text-[9px] font-black px-1.5 py-0.5 uppercase tracking-wide">Sale</div>
                     )}
                   </div>
 
-                  {/* Details */}
                   <div className="flex-1 flex flex-col justify-between py-1">
-                    
-                    {/* Top Section */}
                     <div className="space-y-1">
                       <div className="flex justify-between items-start gap-4">
                         <h3 className="font-bold text-sm uppercase leading-tight line-clamp-2">
@@ -158,66 +142,30 @@ export default function CartDrawer() {
                             {item.name}
                           </Link>
                         </h3>
-                        <button 
-                          onClick={() => removeItem(item.variantId)} 
-                          className="text-muted-foreground hover:text-red-500 transition-colors p-1 -mr-2"
-                        >
+                        <button onClick={() => removeItem(item.variantId)} className="text-muted-foreground hover:text-red-500 transition-colors p-1 -mr-2">
                           <Trash2 size={14} />
                         </button>
                       </div>
-                      
-                      <p className="text-xs text-muted-foreground font-mono">
-                        {item.color} / {item.size}
-                      </p>
+                      <p className="text-xs text-muted-foreground font-mono">{item.color} / {item.size}</p>
                     </div>
 
-                    {/* Bottom Section: Quantity & Price */}
                     <div className="flex items-end justify-between">
-                      
-                      {/* Quantity Controls */}
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center border border-border rounded-sm bg-background w-fit">
-                          <button 
-                            onClick={() => updateQuantity(item.variantId, -1)}
-                            className="w-7 h-7 flex items-center justify-center hover:bg-secondary transition-colors disabled:opacity-30"
-                            disabled={item.quantity <= 1}
-                          >
-                            <Minus size={12} />
-                          </button>
+                          <button onClick={() => updateQuantity(item.variantId, -1)} className="w-7 h-7 flex items-center justify-center hover:bg-secondary transition-colors disabled:opacity-30" disabled={item.quantity <= 1}><Minus size={12} /></button>
                           <span className="w-8 text-center text-xs font-mono font-bold">{item.quantity}</span>
-                          <button 
-                            onClick={() => updateQuantity(item.variantId, 1)}
-                            className={cn(
-                              "w-7 h-7 flex items-center justify-center hover:bg-secondary transition-colors disabled:opacity-30",
-                              isMaxStock && "text-muted-foreground bg-secondary/50"
-                            )}
-                            disabled={isMaxStock}
-                          >
-                            <Plus size={12} />
-                          </button>
+                          <button onClick={() => updateQuantity(item.variantId, 1)} className={cn("w-7 h-7 flex items-center justify-center hover:bg-secondary transition-colors disabled:opacity-30", isMaxStock && "text-muted-foreground bg-secondary/50")} disabled={isMaxStock}><Plus size={12} /></button>
                         </div>
-                        {isMaxStock && (
-                          <span className="text-[9px] text-red-500 flex items-center gap-1 font-medium animate-pulse">
-                            <AlertCircle size={8} /> Max Stock
-                          </span>
-                        )}
+                        {isMaxStock && <span className="text-[9px] text-red-500 flex items-center gap-1 font-medium animate-pulse"><AlertCircle size={8} /> Max Stock</span>}
                       </div>
-
-                      {/* Price Display */}
                       <div className="text-right">
                         {isOnSale ? (
                           <div className="flex flex-col items-end">
-                             <span className="text-[10px] text-muted-foreground line-through decoration-red-500/40">
-                               KES {(item.originalPrice! / 100).toLocaleString()}
-                             </span>
-                             <span className="text-sm font-bold text-red-600">
-                               KES {(item.price / 100).toLocaleString()}
-                             </span>
+                             <span className="text-[10px] text-muted-foreground line-through decoration-red-500/40">KES {(item.originalPrice! / 100).toLocaleString()}</span>
+                             <span className="text-sm font-bold text-red-600">KES {(item.price / 100).toLocaleString()}</span>
                           </div>
                         ) : (
-                          <span className="text-sm font-bold font-mono">
-                             KES {(item.price / 100).toLocaleString()}
-                          </span>
+                          <span className="text-sm font-bold font-mono">KES {(item.price / 100).toLocaleString()}</span>
                         )}
                       </div>
                     </div>
@@ -230,13 +178,11 @@ export default function CartDrawer() {
 
         {/* FOOTER */}
         {items.length > 0 && (
-          <div className="p-6 border-t border-border bg-background/95 backdrop-blur shadow-[0_-5px_20px_rgba(0,0,0,0.05)] space-y-4">
-            
-            {/* Savings Callout */}
+          <div className="p-6 border-t border-border bg-background/95 backdrop-blur space-y-4">
             {totalSavingsCents > 0 && (
-              <div className="flex items-center justify-center gap-2 bg-red-100 dark:bg-red-900/20 py-1.5 rounded text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider">
+              <div className="flex items-center justify-center gap-2 bg-red-100 dark:bg-red-900/20 py-1.5 rounded text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider animate-pulse">
                 <span className="flex items-center justify-center w-4 h-4 bg-red-600 text-white rounded-full text-[9px]">$</span>
-                You are saving KES {(totalSavingsCents / 100).toLocaleString()}!
+                You saved KES {(totalSavingsCents / 100).toLocaleString()}!
               </div>
             )}
 
@@ -245,9 +191,7 @@ export default function CartDrawer() {
                 <span className="text-muted-foreground uppercase tracking-widest">Subtotal</span>
                 <span className="font-mono text-xl font-bold">KES {(totalCents / 100).toLocaleString()}</span>
               </div>
-              <p className="text-[10px] text-muted-foreground text-center">
-                Shipping, taxes, and discounts calculated at checkout.
-              </p>
+              <p className="text-[10px] text-muted-foreground text-center">Shipping & taxes calculated at checkout.</p>
             </div>
 
             <Link 
@@ -255,6 +199,7 @@ export default function CartDrawer() {
               onClick={closeCart}
               className="group w-full bg-foreground text-background py-4 font-black uppercase tracking-widest hover:bg-foreground/90 transition-all flex items-center justify-center gap-2 relative overflow-hidden rounded-sm shadow-xl"
             >
+              <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-in-out skew-x-12" />
               <span className="relative z-10 flex items-center gap-2">
                 Secure Checkout <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
               </span>
@@ -264,6 +209,5 @@ export default function CartDrawer() {
       </div>
     </div>
   );
-
   return createPortal(DrawerContent, document.body);
 }

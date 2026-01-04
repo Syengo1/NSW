@@ -6,8 +6,11 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-KE", { // Changed to Kenyan Shilling based on context
-    style: "currency",
-    currency: "KES",
-  }).format(amount);
+  const formatter = new Intl.NumberFormat("en-US", {
+    style: "decimal",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  return `KES ${formatter.format(amount)}`;
 }
