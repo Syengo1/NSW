@@ -17,7 +17,7 @@ const PLAYLIST = [
   {
     id: 2,
     type: 'image',
-    src: 'https://images.unsplash.com/photo-1523396860124-baf00bc49636?q=80&w=2163',
+    src: '/slide.jpg',
     duration: 3000, 
   },
   {
