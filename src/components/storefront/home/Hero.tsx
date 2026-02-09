@@ -201,7 +201,7 @@ export default function HeroSection() {
     <section 
       ref={containerRef} 
       // REMOVED 'touch-none' to fix mobile scrolling
-      className="relative h-screen supports-[height:100dvh]:h-[100dvh] w-full overflow-hidden bg-black text-white select-none overscroll-none"
+      className="relative h-screen supports-[height:100dvh]:h-[100dvh] w-full overflow-hidden bg-black text-white select-none"
     >
       
       {/* --- MEDIA LAYER --- */}
