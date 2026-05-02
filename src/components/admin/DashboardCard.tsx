@@ -9,14 +9,18 @@ interface DashboardCardProps {
 
 export function DashboardCard({ title, value, description, icon: Icon }: DashboardCardProps) {
   return (
-    <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-6">
-      <div className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <h3 className="tracking-tight text-sm font-medium">{title}</h3>
-        <Icon className="h-4 w-4 text-muted-foreground" />
+    <div className="rounded-xl border border-border bg-card text-card-foreground shadow-sm p-6 hover:shadow-md transition-shadow">
+      <div className="flex flex-row items-center justify-between space-y-0 pb-4">
+        <h3 className="tracking-widest text-xs uppercase font-black text-muted-foreground">
+          {title}
+        </h3>
+        <div className="p-2 bg-secondary rounded-full">
+          <Icon className="h-4 w-4 text-foreground" />
+        </div>
       </div>
-      <div className="pt-2">
-        <div className="text-2xl font-bold">{value}</div>
-        <p className="text-xs text-muted-foreground mt-1">
+      <div>
+        <div className="text-3xl font-black tracking-tighter">{value}</div>
+        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mt-2">
           {description}
         </p>
       </div>

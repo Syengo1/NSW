@@ -1,11 +1,24 @@
-import { createClient } from "@supabase/supabase-js"; // Use the Master Client
+import { createClient } from "@supabase/supabase-js"; 
 import { 
-  Package, Truck, CheckCircle, AlertCircle, Clock, XCircle,
-  MapPin, Store, User, ArrowRight, TrendingUp, DollarSign, Wallet
+  Package, Truck, User, Store, ArrowRight, TrendingUp, Wallet, MapPin
 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import OrderActions from "./OrderActions"; 
 import OrdersToolbar from "@/components/admin/orders/OrdersToolbar";
+
+// --- STRICT TYPES ---
+interface OrderItemData {
+  quantity: number;
+  variant_name: string;
+  product_name: string;
+}
+
+interface StatCardProps {
+  label: string;
+  value: string | number;
+  icon: React.ElementType;
+  color: string;
+}
 
 // --- HELPERS ---
 function StatusBadge({ status }: { status: string }) {
@@ -14,6 +27,7 @@ function StatusBadge({ status }: { status: string }) {
     processing: "bg-blue-500/10 text-blue-500 border-blue-500/20",
     paid: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
     shipped: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+    received: "bg-green-500/10 text-green-600 border-green-500/20",
     failed: "bg-red-500/10 text-red-500 border-red-500/20",
     cancelled: "bg-neutral-500/10 text-neutral-500 border-neutral-500/20",
   };
@@ -24,7 +38,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function StatCard({ label, value, icon: Icon, color }: any) {
+function StatCard({ label, value, icon: Icon, color }: StatCardProps) {
   return (
     <div className="bg-card border border-border p-5 rounded-xl flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
       <div className={cn("p-3 rounded-full", color)}>
@@ -44,7 +58,6 @@ export default async function OrdersPage({
 }: {
   searchParams: Promise<{ q?: string; sort?: string }>;
 }) {
-  // 1. INIT MASTER CLIENT (Bypasses RLS)
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -53,17 +66,15 @@ export default async function OrdersPage({
   
   const params = await searchParams;
 
-  // 2. DATA QUERY
   let query = supabase
     .from("orders")
     .select(`*, order_items ( quantity, variant_name, product_name )`)
     .order('created_at', { ascending: false });
 
-  // 3. FILTERS
   if (params.q) {
     const term = params.q;
-    // Search Order ID, Customer Name, Phone, or Receipt
-    query = query.or(`id.eq.${term},customer_name.ilike.%${term}%,customer_phone.ilike.%${term}%,mpesa_receipt.ilike.%${term}%`);
+    // FIX: Updated search capability to use order_number instead of id
+    query = query.or(`order_number.ilike.%${term}%,customer_name.ilike.%${term}%,customer_phone.ilike.%${term}%,mpesa_receipt.ilike.%${term}%`);
   }
   
   if (params.sort === 'status_pending') query = query.eq('status', 'pending_payment');
@@ -71,8 +82,7 @@ export default async function OrdersPage({
 
   const { data: orders } = await query;
 
-  // 4. LIVE STATS
-  const totalRevenue = orders?.filter(o => o.status === 'paid' || o.status === 'shipped').reduce((sum, o) => sum + o.total_amount, 0) || 0;
+  const totalRevenue = orders?.filter(o => o.status === 'paid' || o.status === 'shipped' || o.status === 'received').reduce((sum, o) => sum + o.total_amount, 0) || 0;
   const pendingShipment = orders?.filter(o => o.status === 'paid').length || 0;
   const activeOrders = orders?.length || 0;
 
@@ -132,11 +142,13 @@ export default async function OrdersPage({
                 {/* 1. ORDER DETAILS */}
                 <div className="col-span-3 space-y-2">
                   <div className="flex items-center gap-2">
-                     <span className="font-mono text-xs font-bold text-primary">#{order.id.slice(0, 8)}</span>
+                     {/* FIX: Now cleanly displays the generated NSW- number */}
+                     <span className="font-mono text-xs font-bold text-primary">#{order.order_number}</span>
                      <span className="text-[10px] text-muted-foreground">{new Date(order.created_at).toLocaleDateString()}</span>
                   </div>
                   <div className="space-y-1 pl-2 border-l-2 border-border/50">
-                    {order.order_items.map((item: any, i: number) => (
+                    {/* FIX: Explicit interface used instead of 'any' */}
+                    {order.order_items.map((item: OrderItemData, i: number) => (
                       <div key={i} className="text-xs font-bold uppercase leading-tight">
                         <span className="text-muted-foreground mr-1">{item.quantity}x</span> {item.product_name}
                         <span className="text-[10px] text-muted-foreground block font-normal">{item.variant_name}</span>
@@ -154,7 +166,6 @@ export default async function OrdersPage({
                        <div className="text-[10px] font-mono text-muted-foreground">{order.customer_phone}</div>
                      </div>
                   </div>
-                  {/* Smart Detection: Is this a gift? */}
                   {isGift && (
                      <div className="flex items-start gap-2 bg-purple-500/5 p-2 rounded border border-purple-500/10">
                         <ArrowRight size={14} className="mt-0.5 text-purple-500" />
@@ -181,7 +192,6 @@ export default async function OrdersPage({
                         <p className="text-[10px] font-bold uppercase leading-tight line-clamp-2" title={order.customer_location}>
                           {order.customer_location || 'No address provided'}
                         </p>
-                        {/* Intelligent Map Link */}
                         {order.delivery_coordinates && (
                           <a 
                             href={`https://www.google.com/maps/search/?api=1&query=${order.delivery_coordinates}`} 

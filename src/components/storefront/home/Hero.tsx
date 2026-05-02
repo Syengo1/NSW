@@ -1,9 +1,16 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowDown, Pause, Play, Volume2, VolumeX, WifiOff, BatteryWarning } from 'lucide-react';
+import { Pause, Play, Volume2, VolumeX, WifiOff, BatteryWarning, MoveDown } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
+
+// --- STRICT TYPES ---
+interface NetworkInformation extends EventTarget {
+  saveData?: boolean;
+  effectiveType?: 'slow-2g' | '2g' | '3g' | '4g';
+}
 
 // --- CONFIG: DATA SOURCES ---
 const PLAYLIST = [
@@ -34,28 +41,40 @@ function useSmartEnvironment() {
   const [isLowData, setIsLowData] = useState(false);
 
   useEffect(() => {
+    let checkConnection: () => void;
+    let conn: NetworkInformation | undefined;
+
     // 1. Check Network (Data Saver)
     if (typeof navigator !== 'undefined' && 'connection' in navigator) {
-      const conn = (navigator as any).connection;
-      const checkConnection = () => {
-        if (conn.saveData || conn.effectiveType === '2g' || conn.effectiveType === 'slow-2g') {
-          setIsLowData(true);
-        }
-      };
-      checkConnection();
-      conn.addEventListener('change', checkConnection);
-      return () => conn.removeEventListener('change', checkConnection);
+      const nav = navigator as Navigator & { connection?: NetworkInformation };
+      conn = nav.connection;
+      
+      if (conn) {
+        checkConnection = () => {
+          if (conn?.saveData || conn?.effectiveType === '2g' || conn?.effectiveType === 'slow-2g') {
+            setIsLowData(true);
+          } else {
+            setIsLowData(false);
+          }
+        };
+        checkConnection();
+        conn.addEventListener('change', checkConnection);
+      }
     }
 
     // 2. Check Battery / Power
-    // We only assume Low Power if the OS explicitly tells us
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const handleMotionChange = (e: MediaQueryListEvent) => setIsLowPower(e.matches);
     
-    setIsLowPower(mediaQuery.matches);
+    // FIX: Defer initial state setting to prevent synchronous cascading renders (ESLint Error)
+    const powerTimer = setTimeout(() => setIsLowPower(mediaQuery.matches), 0);
     mediaQuery.addEventListener('change', handleMotionChange);
 
-    return () => mediaQuery.removeEventListener('change', handleMotionChange);
+    return () => {
+      if (conn && checkConnection) conn.removeEventListener('change', checkConnection);
+      clearTimeout(powerTimer);
+      mediaQuery.removeEventListener('change', handleMotionChange);
+    };
   }, []);
 
   return { isLowPower, isLowData };
@@ -67,22 +86,24 @@ export default function HeroSection() {
   const [isMuted, setIsMuted] = useState(true);
   const [progress, setProgress] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isInView, setIsInView] = useState(true); // NEW: Track viewport visibility
   
   // ERROR HANDLING
   const [userOverride, setUserOverride] = useState(false); 
   const [videoError, setVideoError] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLElement>(null);
   const playPromiseRef = useRef<Promise<void> | null>(null);
 
   const { isLowData, isLowPower } = useSmartEnvironment();
   const activeMedia = PLAYLIST[currentIdx];
 
-  // LOGIC: Play video IF (Video Type) AND (Env OK OR User Forced) AND (No Error)
+  // LOGIC: Play video IF (Video Type) AND (Env OK OR User Forced) AND (No Error) AND (In Viewport)
   const shouldPlayVideo = activeMedia.type === 'video' 
     && (userOverride || (!isLowData && !isLowPower))
-    && !videoError;
+    && !videoError
+    && isInView; // Pause if scrolled away
   
   const effectiveType = shouldPlayVideo ? 'video' : 'image';
 
@@ -91,12 +112,24 @@ export default function HeroSection() {
     setVideoError(false);
   }, [currentIdx]);
 
+  // --- NEW: SCROLL INTERSECTION OBSERVER ---
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsInView(entry.isIntersecting),
+      { threshold: 0.1 }
+    );
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   // --- PLAYBACK ENGINE ---
   const safePlay = useCallback(async () => {
     const video = videoRef.current;
     if (!video) return;
 
     if ((isLowPower || isLowData) && !userOverride) return;
+    if (!isInView) return; // Don't play if off-screen
 
     if (playPromiseRef.current) return; 
 
@@ -115,7 +148,7 @@ export default function HeroSection() {
         playPromiseRef.current = null;
       }
     }
-  }, [isLowPower, isLowData, userOverride]);
+  }, [isLowPower, isLowData, userOverride, isInView]);
 
   const safePause = useCallback(() => {
     const video = videoRef.current;
@@ -126,6 +159,15 @@ export default function HeroSection() {
     }
   }, []);
 
+  // Sync playback with Viewport
+  useEffect(() => {
+    if (!isInView) {
+      safePause();
+    } else if (effectiveType === 'video' && isPlaying) {
+      safePlay();
+    }
+  }, [isInView, safePause, safePlay, effectiveType, isPlaying]);
+
   // --- SLIDE & PROGRESS ---
   const nextSlide = useCallback(() => {
     setProgress(0);
@@ -134,6 +176,7 @@ export default function HeroSection() {
 
   useEffect(() => {
     if (!isPlaying && effectiveType !== 'image') return; 
+    if (!isInView) return; // Pause progress bar if scrolled away
 
     let progressInterval: NodeJS.Timeout;
     let slideTimeout: NodeJS.Timeout;
@@ -161,7 +204,7 @@ export default function HeroSection() {
       clearInterval(progressInterval);
       clearTimeout(slideTimeout);
     };
-  }, [currentIdx, isPlaying, effectiveType, activeMedia.duration, nextSlide]);
+  }, [currentIdx, isPlaying, effectiveType, activeMedia.duration, nextSlide, isInView]);
 
   const handleVideoTimeUpdate = () => {
     if (videoRef.current && effectiveType === 'video') {
@@ -200,7 +243,6 @@ export default function HeroSection() {
   return (
     <section 
       ref={containerRef} 
-      // REMOVED 'touch-none' to fix mobile scrolling
       className="relative h-screen supports-[height:100dvh]:h-[100dvh] w-full overflow-hidden bg-black text-white select-none"
     >
       
@@ -209,8 +251,7 @@ export default function HeroSection() {
         {PLAYLIST.map((media, index) => {
           const isActive = index === currentIdx;
           const isVideoRender = media.type === 'video' && shouldPlayVideo;
-          // Fallback Logic:
-          const srcToRender = (media.type === 'video' && !shouldPlayVideo) ? media.poster : media.src;
+          const srcToRender = ((media.type === 'video' && !shouldPlayVideo) ? media.poster : media.src) || '';
 
           return (
             <div 
@@ -235,16 +276,19 @@ export default function HeroSection() {
                 />
               ) : (
                 <div className="relative h-full w-full overflow-hidden">
-                  <img 
+                  {/* FIX: Replaced img tag with highly optimized Next.js Image Component */}
+                  <Image 
                     src={srcToRender} 
-                    alt="Hero Visual"
+                    alt="Nairobi Streetwear Hero Visual"
+                    fill
+                    priority={isActive}
+                    sizes="100vw"
                     className={cn(
-                      "h-full w-full object-cover transition-transform duration-[10000ms] ease-out will-change-transform",
+                      "object-cover transition-transform duration-[10000ms] ease-out will-change-transform",
                       isActive && isLoaded ? "scale-110" : "scale-100"
                     )}
                   />
                   
-                  {/* Warning only shows if NO error occurred yet */}
                   {media.type === 'video' && isActive && !userOverride && !videoError && (
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-500">
                       <div className="bg-black/40 backdrop-blur-md border border-white/10 p-6 rounded-2xl flex flex-col items-center text-center max-w-xs">
@@ -275,26 +319,24 @@ export default function HeroSection() {
           );
         })}
         
-        {/* Cinematic Overlays */}
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none z-10 brightness-100 contrast-150 mix-blend-overlay" />
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent z-10" />
       </div>
 
       {/* --- CONTENT LAYER --- */}
-      <div className="relative z-20 h-full flex flex-col items-center justify-center text-center px-4 pt-20">
-        <div className="overflow-hidden mix-blend-screen">
-          <h1 className="text-6xl md:text-9xl font-black uppercase tracking-tighter mb-2 leading-[0.8] animate-in slide-in-from-bottom-20 duration-1000 delay-300 drop-shadow-2xl relative">
-            <span className="relative inline-block">Nairobi</span>
-            <br className="md:hidden"/> 
-            <span className="relative inline-block md:ml-4">Streetwear</span>
-          </h1>
-        </div>
-        
-        <p className="text-sm md:text-lg font-bold uppercase tracking-[0.3em] text-neutral-300 max-w-xl mb-10 animate-in fade-in zoom-in duration-1000 delay-500">
-          Redefining The Culture. <span className="text-white">Est. 2026</span>
+      <div className="relative z-20 h-full flex flex-col items-center justify-center text-center px-4 pt-20 animate-fade-in-up mix-blend-screen">
+        <h2 className="text-sm md:text-base font-bold uppercase tracking-[0.3em] text-neutral-300 drop-shadow-lg mb-6 animate-in slide-in-from-bottom-5 duration-1000 delay-300">
+          Welcome to Nairobi Streetwear
+        </h2>
+        <p className="text-3xl md:text-5xl font-black uppercase tracking-tighter max-w-3xl leading-[1.1] drop-shadow-2xl mb-6 animate-in slide-in-from-bottom-10 duration-1000 delay-500">
+          Redefining the culture through fabric, form, and function.
+        </p>
+        <p className="text-xs md:text-sm text-neutral-300 max-w-xl leading-relaxed drop-shadow-md mb-10 animate-in fade-in zoom-in duration-1000 delay-700">
+          We curate pieces that speak to the soul of the city. Bold, authentic, and unapologetically premium. 
+          Explore the latest drops and archives below.
         </p>
         
-        <div className="flex flex-col md:flex-row gap-4 animate-in fade-in slide-in-from-bottom-10 duration-1000 delay-700">
+        <div className="flex flex-col md:flex-row gap-4 animate-in fade-in slide-in-from-bottom-10 duration-1000 delay-1000">
            <Link 
              href="/shop?sort=newest" 
              className="group relative bg-white text-black px-8 py-4 font-black uppercase tracking-widest text-xs overflow-hidden"
@@ -349,9 +391,9 @@ export default function HeroSection() {
 
       <button 
         onClick={scrollToContent}
-        className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20 text-white/50 hover:text-white transition-colors animate-bounce cursor-pointer"
+        className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20 text-white/50 hover:text-white transition-colors animate-bounce cursor-pointer flex flex-col items-center"
       >
-        <ArrowDown size={32} strokeWidth={1} />
+        <MoveDown size={32} strokeWidth={1} />
       </button>
 
       <div className="absolute bottom-12 left-8 z-30 flex gap-2">

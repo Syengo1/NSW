@@ -6,17 +6,15 @@ import { cn } from '@/lib/utils';
 
 // --- CONFIGURATION ---
 const MESSAGES = [
-  "INITIALIZING SYSTEM...",
-  "ESTABLISHING SECURE CONNECTION TO NAIROBI_STREETWEAR...",
-  "ACCESS GRANTED :: WELCOME USER",
-  "ALERT :: FREE DELIVERY ON ALL ORDERS ABOVE KES 5,000",
-  "NEW DROP :: 'URBAN LEGENDS' COLLECTION NOW LIVE",
-  "STOCK LEVEL :: LIMITED QUANTITIES AVAILABLE"
+  "WELCOME TO NAIROBI STREETWEAR!!!",
+  "YOUR TRUSTED ONLINE CLOTHING SHOP...",
+  "ALERT :: FREE DELIVERY ON ALL ORDERS ABOVE KES 10,000",
+  "NEW DROP :: COMING SOON...",
 ];
 
-const TYPING_SPEED = 50; // ms per char
-const DELETING_SPEED = 30; // ms per char
-const PAUSE_TIME = 3000; // time to wait before deleting
+const TYPING_SPEED = 20; // ms per char
+const DELETING_SPEED = 10; // ms per char
+const PAUSE_TIME = 1200; // time to wait before deleting
 
 export default function NewsTicker() {
   const [isVisible, setIsVisible] = useState(true);

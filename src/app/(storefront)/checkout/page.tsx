@@ -309,8 +309,8 @@ export default function CheckoutPage() {
                               {coords && (
                                 <Marker 
                                   position={coords} 
-                                  draggable={true} // FIX: Make it editable!
-                                  onDragEnd={handleMarkerDragEnd} // FIX: Update search bar when dragging ends
+                                  draggable={true}
+                                  onDragEnd={handleMarkerDragEnd} 
                                   animation={google.maps.Animation.DROP} 
                                 />
                               )}

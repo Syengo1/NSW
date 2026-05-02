@@ -3,12 +3,34 @@
 import { useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import SmartSlider from './SmartSlider';
-import { Filter, Sparkles, ArrowRight } from 'lucide-react';
+import { Filter, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 
+// --- STRICT TYPES ---
 type FilterType = 'all' | 'men' | 'women';
 
-export default function FeaturedManager({ allProducts, saleProducts, categories }: any) {
+export interface Product {
+  id: string;
+  title: string;
+  slug: string;
+  base_price: number;
+  sale_price: number | null;
+  category: string;
+  description: string;
+  main_image: string;
+  total_stock: number;
+  discountPct: number;
+  gender: string;
+}
+
+interface FeaturedManagerProps {
+  allProducts: Product[];
+  saleProducts: Product[];
+  categories: string[];
+}
+
+export default function FeaturedManager({ allProducts, saleProducts, categories }: FeaturedManagerProps) {
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [isChanging, setIsChanging] = useState(false);
 
@@ -20,29 +42,46 @@ export default function FeaturedManager({ allProducts, saleProducts, categories 
     setTimeout(() => setIsChanging(false), 300); 
   };
 
-  const filterProduct = (p: any) => {
-    if (activeFilter === 'all') return true;
-    const text = (p.title + p.category + p.description).toLowerCase();
-    
-    // Strict + Fallback Logic
-    if (activeFilter === 'men') return text.includes('men') || text.includes('unisex') || !text.includes('women');
-    if (activeFilter === 'women') return text.includes('women') || text.includes('unisex');
-    return true;
-  };
+  // --- FIX: REACT HOOKS EXHAUSTIVE DEPS & MEMOIZATION ---
+  // By moving the filter logic directly inside the useMemo, we prevent React from 
+  // destroying the memoization on every render, solving the ESLint errors permanently.
+  const filteredSales = useMemo(() => {
+    return saleProducts.filter((p) => {
+      if (activeFilter === 'all') return true;
+      
+      // Fallback: If an old product was created before you added the gender column, show it by default
+      if (!p.gender) return true; 
 
-  const filteredSales = useMemo(() => saleProducts.filter(filterProduct), [activeFilter, saleProducts]);
-  const filteredCatalog = useMemo(() => allProducts.filter(filterProduct), [activeFilter, allProducts]);
+      // Strict matching based on the exact dropdown values from your Admin Product Creation page
+      if (activeFilter === 'women') return p.gender === 'women' || p.gender === 'unisex';
+      if (activeFilter === 'men') return p.gender === 'men' || p.gender === 'unisex';
+      
+      return true;
+    });
+  }, [activeFilter, saleProducts]);
+
+  const filteredCatalog = useMemo(() => {
+    return allProducts.filter((p) => {
+      if (activeFilter === 'all') return true;
+      
+      if (!p.gender) return true; 
+
+      if (activeFilter === 'women') return p.gender === 'women' || p.gender === 'unisex';
+      if (activeFilter === 'men') return p.gender === 'men' || p.gender === 'unisex';
+      
+      return true;
+    });
+  }, [activeFilter, allProducts]);
 
   return (
-    // OPTIMIZATION: 'min-h-screen' ensures we utilize full height
     <div className="relative min-h-screen pb-20 bg-background">
       
-      {/* 1. STICKY FILTER CONTROL */}
+      {/* 1. STICKY FILTER CONTROL (Premium Glassmorphism) */}
       <div className="sticky top-16 z-30 pointer-events-none pt-4 pb-2">
-        <div className="container mx-auto px-4">
-           <div className="pointer-events-auto inline-flex items-center gap-1 p-1.5 rounded-full bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl border border-black/5 shadow-xl transition-all hover:scale-[1.02]">
+        <div className="container mx-auto px-4 flex justify-center md:justify-start">
+           <div className="pointer-events-auto inline-flex items-center gap-1 p-1.5 rounded-full bg-background/70 backdrop-blur-2xl border border-border/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.5)] transition-transform hover:scale-[1.02]">
               
-              <div className="pl-3 pr-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-r border-border/50 mr-1 h-6">
+              <div className="pl-4 pr-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-r border-border/50 mr-1 h-6">
                  <Filter size={12} /> 
                  <span className="hidden sm:inline">Filter</span>
               </div>
@@ -52,14 +91,14 @@ export default function FeaturedManager({ allProducts, saleProducts, categories 
                   key={f}
                   onClick={() => handleFilterChange(f as FilterType)}
                   className={cn(
-                    "relative px-5 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all duration-300",
+                    "relative px-6 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all duration-300",
                     activeFilter === f 
-                      ? "text-white dark:text-black" 
-                      : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10"
+                      ? "text-primary-foreground" 
+                      : "text-muted-foreground hover:text-foreground"
                   )}
                 >
                   {activeFilter === f && (
-                    <span className="absolute inset-0 bg-black dark:bg-white rounded-full -z-10 animate-in zoom-in-95 duration-200" />
+                    <span className="absolute inset-0 bg-primary rounded-full -z-10 animate-in zoom-in-95 duration-200 shadow-md" />
                   )}
                   {f}
                 </button>
@@ -69,29 +108,42 @@ export default function FeaturedManager({ allProducts, saleProducts, categories 
       </div>
 
       <div className={cn(
-        // APP FEEL: Use snap scrolling for the main container
-        "transition-opacity duration-500 ease-in-out snap-y snap-mandatory",
-        isChanging ? "opacity-50 blur-sm scale-[0.99]" : "opacity-100 blur-0 scale-100"
+        "transition-all duration-500 ease-in-out snap-y snap-mandatory",
+        isChanging ? "opacity-40 blur-[2px] scale-[0.98]" : "opacity-100 blur-0 scale-100"
       )}>
 
-        {/* 2. SALES SLIDER */}
+        {/* 2. SALES SLIDER (Top Deals) */}
         {filteredSales.length > 0 && (
-          // PADDING STRATEGY: 'py-6' provides the "Invisible Border"
-          <section className="py-6 snap-start scroll-pt-28">
-            <div className="container mx-auto px-4 flex items-center justify-between mb-3">
-               <div className="flex items-center gap-2">
-                  <div className="bg-red-600 text-white p-1 rounded-md shadow-lg shadow-red-500/30">
-                    <Sparkles size={14} fill="currentColor" />
+          <section className="py-12 snap-start scroll-pt-28 relative">
+            {/* Subtle background glow for the sale section */}
+<div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-full bg-red-500/15 dark:bg-red-500/5 blur-[100px] -z-10 pointer-events-none rounded-full" />
+            
+            <div className="container mx-auto px-4 flex flex-col md:flex-row items-start md:items-end justify-between mb-6 gap-2">
+               <div className="flex items-center gap-1">
+                  {/* FIX: Replaced Lucide Icon with your Custom SVG */}
+                  <div className="  shadow-lg shadow-red-600 flex items-center justify-center animate-pulse">
+                    <Image 
+                      src="/sale.svg" 
+                      alt="Sale Icon" 
+                      width={18} 
+                      height={18}
+                    />
                   </div>
                   <div>
-                    <h3 className="text-sm md:text-base font-black uppercase tracking-tighter leading-none">
-                      Top Deals
+                    <h3 className="text-xl md:text-xl font-black uppercase tracking-tighter leading-none">
+                      HOT DEALS
                     </h3>
+                    <p className="text-[8px] uppercase font-bold tracking-widest text-red-500 mt-1 flex items-center gap-1">
+                      <span className="w-1 h-1.5 rounded-full bg-red-500 animate-ping" /> Limited Time Offers
+                    </p>
                   </div>
                </div>
                
-               <Link href="/shop?sort=price_asc" className="hidden md:flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest hover:text-red-600 transition-colors">
-                 View All <ArrowRight size={12} />
+               <Link 
+                 href="/shop?sort=price_asc" 
+                 className="group flex items-center gap-2 text-[10px] font-black uppercase tracking-widest hover:text-red-600 transition-colors"
+               >
+                 View All Drops <ArrowRight size={12} className="group-hover:translate-x-1 transition-transform" />
                </Link>
             </div>
             
@@ -101,20 +153,20 @@ export default function FeaturedManager({ allProducts, saleProducts, categories 
 
         {/* 3. CATEGORY COLLECTIONS */}
         {categories.map((cat: string) => {
-          const catProducts = filteredCatalog.filter((p: any) => p.category === cat);
+          // FIX: Explicitly typed 'p' as 'Product' to fix the final 'any' error
+          const catProducts = filteredCatalog.filter((p: Product) => p.category === cat);
           if (catProducts.length === 0) return null;
 
           return (
-            // DENSITY FIX: 'py-4' is tight enough to allow ~2.5 sections to fit on mobile
-            <section key={cat} className="py-4 snap-start scroll-pt-28">
-              {/* Header: Removed border-b for sleek, invisible separation */}
-              <div className="container mx-auto px-4 flex justify-between items-end mb-2">
+            <section key={cat} className="py-10 snap-start scroll-pt-28 border-t border-border/30 first:border-0">
+              <div className="container mx-auto px-4 flex justify-between items-end mb-6">
                  <div>
-                   <p className="text-[8px] text-muted-foreground uppercase tracking-widest mb-0.5 flex items-center gap-2">
-                     <span className="w-3 h-[1px] bg-foreground/20"></span> Collection
+                   <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-1.5 flex items-center gap-2">
+                     <span className="w-6 h-[2px] bg-foreground/20"></span> The Archives
                    </p>
-                   {/* Compact Title Size */}
-                   <h3 className="text-lg md:text-2xl font-black uppercase tracking-tighter leading-none">{cat}</h3>
+                   <h3 className="text-3xl md:text-4xl font-black uppercase tracking-tighter leading-none">
+                     {cat}
+                   </h3>
                  </div>
               </div>
               

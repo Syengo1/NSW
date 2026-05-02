@@ -17,6 +17,25 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
   revalidatePath('/admin/orders');
 }
 
+// --- MARK AS RECEIVED ---
+export async function markOrderReceived(orderId: string) {
+  const supabase = await createClient();
+
+  // Update status to received and record the exact completion time
+  const { error } = await supabase
+    .from('orders')
+    .update({ 
+      status: 'received',
+      // Optional: If you add a completed_at timestamp column later, you can set it here
+      // completed_at: new Date().toISOString() 
+    })
+    .eq('id', orderId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath('/admin/orders');
+}
+
 // --- CANCEL & RESTOCK (Premium Feature) ---
 // This ensures inventory stays accurate even when orders fail or are cancelled manually.
 export async function cancelOrder(orderId: string) {

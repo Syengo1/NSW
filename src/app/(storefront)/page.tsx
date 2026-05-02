@@ -3,7 +3,6 @@ import Hero from "@/components/storefront/home/Hero";
 import FeaturedManager from "@/components/storefront/home/FeaturedManager";
 import NewsTicker from "@/components/storefront/home/NewsTicker";
 import Footer from "@/components/storefront/Footer";
-import { MoveDown } from "lucide-react";
 
 // Cache for 60 seconds for performance
 export const revalidate = 60;
@@ -15,7 +14,7 @@ export default async function HomePage() {
   const { data: rawProducts } = await supabase
     .from('products')
     .select(`
-      id, title, slug, base_price, sale_price, category, status, description, created_at,
+      id, title, slug, base_price, sale_price, category, status, description, created_at, gender,
       product_images ( url, display_order ),
       variants ( stock_quantity )
     `)
@@ -37,30 +36,38 @@ export default async function HomePage() {
     .filter(p => p.sale_price && p.sale_price < p.base_price)
     .sort((a, b) => b.discountPct - a.discountPct);
 
-  // Extract Categories dynamically
-  const categories = Array.from(new Set(products.map(p => p.category))).sort();
+  // 1. DEFINE YOUR EXACT DESIRED ORDER HERE
+  const PREFERRED_ORDER = [
+    "Hoodies", 
+    "T-Shirts", 
+    "Footwear", 
+    "Headwear", 
+    "Accessories"
+  ];
+
+  // 2. EXTRACT AND SORT CATEGORIES INTELLIGENTLY
+  const categories = Array.from(new Set(products.map(p => p.category))).sort((a, b) => {
+    const indexA = PREFERRED_ORDER.indexOf(a);
+    const indexB = PREFERRED_ORDER.indexOf(b);
+
+    // If both exist in your preferred list, sort by their position in the list
+    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+    
+    // If 'a' is in the list but 'b' is not, 'a' gets priority
+    if (indexA !== -1) return -1;
+    
+    // If 'b' is in the list but 'a' is not, 'b' gets priority
+    if (indexB !== -1) return 1;
+    
+    // If neither are in your list (e.g., you added a new category in the admin panel but forgot to add it here), fall back to alphabetical
+    return a.localeCompare(b);
+  });
 
   return (
     <main className="min-h-screen bg-background text-foreground selection:bg-foreground selection:text-background">
       
-      {/* A. HERO SECTION */}
+      {/* A. HERO SECTION (Now includes welcome text) */}
       <Hero />
-
-      {/* B. WELCOME / INTRO */}
-      <section className="container mx-auto px-6 py-24 md:py-32 flex flex-col items-center text-center space-y-6 animate-fade-in-up">
-        <div className="h-16 w-[1px] bg-border mb-4" />
-        <h2 className="text-sm font-bold uppercase tracking-[0.3em] text-muted-foreground">
-          Welcome to Nairobi Streetwear
-        </h2>
-        <p className="text-2xl md:text-4xl font-black uppercase tracking-tighter max-w-2xl leading-tight">
-          Redefining the culture through fabric, form, and function.
-        </p>
-        <p className="text-sm text-muted-foreground max-w-lg leading-relaxed">
-          We curate pieces that speak to the soul of the city. Bold, authentic, and unapologetically premium. 
-          Explore the latest drops and archives below.
-        </p>
-        <MoveDown className="animate-bounce text-muted-foreground pt-4" size={40} strokeWidth={1} />
-      </section>
 
       {/* C. FEATURED SHOWCASE (Smart Filter Engine) */}
       <FeaturedManager 
