@@ -1,43 +1,50 @@
 'use client';
 
 import { useCartStore } from '@/lib/store/cart';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
-  Loader2, Lock, Smartphone, MapPin, ArrowLeft, User, Truck, 
-  Store, Crosshair, Info, CheckCircle2, AlertCircle, ChevronDown, ChevronUp 
+  Loader2, Lock, Smartphone, ArrowLeft, User, Truck, 
+  Store, Info, CheckCircle2, AlertCircle, ChevronDown, ChevronUp, Map, Crosshair 
 } from 'lucide-react';
 import { processCheckout } from './actions';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { cn, formatCurrency } from '@/lib/utils';
 import { toast } from 'sonner';
+
+// GOOGLE MAPS INTEGRATION
+import AddressAutocomplete from '@/components/storefront/AddressAutocomplete';
+import { GoogleMap, Marker, useLoadScript } from '@react-google-maps/api';
 
 // --- CONFIG ---
 const SHOP_LAT = -1.2636;
 const SHOP_LNG = 36.8028;
-
-// Regex for Kenyan Phone Numbers (Safaricom/Airtel/Telkom)
+const LIBRARIES: ("places")[] = ["places"];
 const KENYA_PHONE_REGEX = /^(?:254|\+254|0)?((?:7|1)(?:(?:[0-9][0-9])|(?:[0-9][0-9])|(?:[0-9][0-9]))[0-9]{6})$/;
 
 export default function CheckoutPage() {
   const { items, getCartTotal, clearCart } = useCartStore();
   const router = useRouter();
   
-  // --- UI STATE ---
+  const { isLoaded } = useLoadScript({
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY as string,
+    libraries: LIBRARIES,
+  });
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mobileSummaryOpen, setMobileSummaryOpen] = useState(false);
+  const [showMap, setShowMap] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
   
-  // --- FORM STATE ---
   const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('delivery');
   const [separateRecipient, setSeparateRecipient] = useState(false);
   
-  // --- SMART INPUTS ---
   const [phone, setPhone] = useState('');
   const [phoneError, setPhoneError] = useState(false);
 
-  // --- LOCATION STATE ---
-  const [locating, setLocating] = useState(false);
+  const [addressText, setAddressText] = useState("");
   const [coords, setCoords] = useState<{lat: number, lng: number} | null>(null);
   const [distanceKm, setDistanceKm] = useState<number>(0);
   const [deliveryFee, setDeliveryFee] = useState(0);
@@ -45,7 +52,6 @@ export default function CheckoutPage() {
   const cartTotal = getCartTotal();
   const grandTotal = cartTotal + deliveryFee;
 
-  // --- 1. INTELLIGENT FEE CALCULATOR ---
   useEffect(() => {
     if (deliveryMethod === 'pickup') {
       setDeliveryFee(0);
@@ -53,7 +59,6 @@ export default function CheckoutPage() {
     }
 
     if (coords) {
-      // Haversine Formula for Client-Side Feedback
       const R = 6371; 
       const dLat = (coords.lat - SHOP_LAT) * (Math.PI/180);
       const dLon = (coords.lng - SHOP_LNG) * (Math.PI/180);
@@ -65,100 +70,92 @@ export default function CheckoutPage() {
       
       setDistanceKm(d);
 
-      // Fee Logic (Synced with Server)
       if (d <= 8) setDeliveryFee(0);
       else if (d <= 20) setDeliveryFee(0); 
-      else if (d <= 25) setDeliveryFee(10000); // 100 KES
+      else if (d <= 25) setDeliveryFee(10000); 
       else setDeliveryFee(20000 + (Math.ceil(d - 25) * 1000));
     }
   }, [coords, deliveryMethod]);
 
-  // --- 2. PHONE VALIDATOR ---
   useEffect(() => {
     if (phone.length > 3) {
-       const isValid = KENYA_PHONE_REGEX.test(phone);
-       setPhoneError(!isValid);
+       setPhoneError(!KENYA_PHONE_REGEX.test(phone));
     } else {
        setPhoneError(false);
     }
   }, [phone]);
 
-  // --- 3. GPS LOCATOR (FOOLPROOFED) ---
-  const handleLocateMe = () => {
-    setLocating(true);
+  // --- NEW: CENTRALIZED REVERSE GEOCODING HELPER ---
+  const updateLocationFromLatLng = useCallback((lat: number, lng: number) => {
+    setCoords({ lat, lng });
+    const geocoder = new window.google.maps.Geocoder();
+    
+    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if (status === 'OK' && results && results[0]) {
+        setAddressText(results[0].formatted_address);
+      } else {
+        setAddressText(`Pinned Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+      }
+    });
+  }, []);
 
-    // Safety Checks
-    if (typeof window === 'undefined' || !navigator.geolocation) {
-      toast.error("Geolocation is not supported by your browser");
-      setLocating(false);
+  // --- MAP INTERACTION HANDLERS ---
+  const handleMapClick = useCallback((e: google.maps.MapMouseEvent) => {
+    if (e.latLng) updateLocationFromLatLng(e.latLng.lat(), e.latLng.lng());
+  }, [updateLocationFromLatLng]);
+
+  const handleMarkerDragEnd = useCallback((e: google.maps.MapMouseEvent) => {
+    if (e.latLng) updateLocationFromLatLng(e.latLng.lat(), e.latLng.lng());
+  }, [updateLocationFromLatLng]);
+
+  // --- LIVE GPS LOCATOR ---
+  const handleLiveLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Your browser does not support GPS location.");
       return;
     }
 
-    // Secure Context Check (Browsers block GPS on non-https)
-    if (!window.isSecureContext && window.location.hostname !== 'localhost') {
-       toast.error("Location requires a secure (HTTPS) connection.");
-       setLocating(false);
-       return;
-    }
-
+    setIsLocating(true);
+    
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setCoords({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        });
-        setLocating(false);
-        toast.success("Location pinned successfully!");
+        updateLocationFromLatLng(position.coords.latitude, position.coords.longitude);
+        setIsLocating(false);
+        toast.success("Location locked!");
       },
       (err) => {
-        // FIX: Replaced console.error with console.warn to avoid Next.js Error Overlay
-        console.warn("Geolocation Error:", err.message);
-        
-        let msg = "Unable to retrieve location.";
-        switch(err.code) {
-            case 1: // PERMISSION_DENIED
-                msg = "Location permission denied. Please enable it in your browser settings.";
-                break;
-            case 2: // POSITION_UNAVAILABLE
-                msg = "Location signal weak. Try moving to a clear area.";
-                break;
-            case 3: // TIMEOUT
-                msg = "Location request timed out. Please try again.";
-                break;
-        }
-        toast.error(msg);
-        setLocating(false);
+        setIsLocating(false);
+        console.warn("GPS Error:", err.message);
+        if (err.code === 1) toast.error("Please allow location permissions in your browser.");
+        else toast.error("Location signal weak. Try stepping outside or searching manually.");
       },
-      { 
-        enableHighAccuracy: true, 
-        timeout: 15000, // Increased timeout to 15s for slow mobile GPS
-        maximumAge: 0 
-      }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 
-  // --- 4. SUBMISSION HANDLER ---
+  // --- SUBMISSION HANDLER ---
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
 
-    // Final Validation Checks
     if (phoneError) {
       toast.error("Please enter a valid M-Pesa phone number");
       document.getElementById('phone-input')?.focus();
       return;
     }
-    if (deliveryMethod === 'delivery' && !coords) {
-      toast.error("Please pin your delivery location");
+    if (deliveryMethod === 'delivery' && (!coords || !addressText)) {
+      toast.error("Please search and select a valid delivery location");
       return;
     }
 
     setLoading(true);
     const formData = new FormData(e.currentTarget);
     
-    // Append Smart Data
     formData.append('deliveryMethod', deliveryMethod);
-    if (coords) formData.append('coordinates', `${coords.lat},${coords.lng}`);
+    if (coords && addressText) {
+       formData.append('coordinates', `${coords.lat},${coords.lng}`);
+       formData.append('addressText', addressText);
+    }
 
     try {
       const result = await processCheckout(formData, items);
@@ -168,16 +165,15 @@ export default function CheckoutPage() {
         toast.success("Order created! Check your phone.");
         router.push(`/track-order/${result.orderId}`);
       } else {
-        // Handle Soft Warnings (like M-Pesa timeout)
         if (result.warning) toast.warning(result.warning);
         else toast.error(result.error || "Payment failed.");
         
-        // Show error UI
         setError(result.error || "Transaction failed");
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
-    } catch (err: any) {
-      setError(err.message || "Connection error. Please try again.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Connection error. Please try again.";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -202,7 +198,6 @@ export default function CheckoutPage() {
         {/* --- LEFT COLUMN: CHECKOUT FORM --- */}
         <div className="lg:col-span-7 space-y-8">
            
-           {/* Header */}
            <div className="flex items-center justify-between">
               <Link href="/shop" className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors group">
                 <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> Back to Shop
@@ -274,46 +269,90 @@ export default function CheckoutPage() {
                      <div>
                         <div className="flex justify-between items-center mb-2">
                            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Delivery Location</label>
-                           {coords && <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1"><CheckCircle2 size={10} /> GPS Locked</span>}
+                           {coords && <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1"><CheckCircle2 size={10} /> Address Confirmed</span>}
                         </div>
                         
-                        <div className="flex gap-2">
-                          <div className="relative flex-1">
-                             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
-                             <input 
-                                name="addressText" 
-                                required={deliveryMethod === 'delivery'}
-                                placeholder={coords ? "Location pinned! Add building name/landmark..." : "Search area or estate..."}
-                                className="w-full bg-secondary border border-border p-3 pl-10 text-sm focus:border-primary outline-none transition-all rounded-md focus:ring-1 focus:ring-primary" 
-                             />
+                        {/* 1. GOOGLE AUTOCOMPLETE SEARCH */}
+                        <AddressAutocomplete 
+                          selectedAddress={addressText}
+                          onLocationSelect={(address, newCoords) => {
+                            setAddressText(address);
+                            setCoords(newCoords);
+                            setShowMap(true); // FIX: Always ensure map is visible so they can drag the pin to refine
+                          }}
+                          onAddressEdit={(text) => setAddressText(text)}
+                        />
+
+                        {/* 2. MANUAL MAP TOGGLE */}
+                        <button
+                          type="button"
+                          onClick={() => setShowMap(!showMap)}
+                          className="mt-2 flex items-center gap-1.5 text-[10px] font-bold uppercase text-muted-foreground hover:text-primary transition-colors"
+                        >
+                          <Map size={12} />
+                          {showMap ? "Hide Map" : "Can't find your exact building? Pin it on the map"}
+                        </button>
+
+                        {/* 3. VISUAL GOOGLE MAP */}
+                        {showMap && isLoaded && (
+                          <div className="relative mt-4 w-full h-[300px] rounded-lg overflow-hidden border border-border shadow-inner animate-in fade-in zoom-in-95 duration-200">
+                            <GoogleMap
+                              mapContainerStyle={{ width: '100%', height: '100%' }}
+                              center={coords || { lat: SHOP_LAT, lng: SHOP_LNG }}
+                              zoom={coords ? 17 : 12}
+                              onClick={handleMapClick}
+                              options={{
+                                disableDefaultUI: true,
+                                zoomControl: true,
+                              }}
+                            >
+                              {coords && (
+                                <Marker 
+                                  position={coords} 
+                                  draggable={true} // FIX: Make it editable!
+                                  onDragEnd={handleMarkerDragEnd} // FIX: Update search bar when dragging ends
+                                  animation={google.maps.Animation.DROP} 
+                                />
+                              )}
+                            </GoogleMap>
+                            
+                            <button
+                              type="button"
+                              onClick={handleLiveLocation}
+                              disabled={isLocating}
+                              className="absolute bottom-4 left-4 bg-white dark:bg-zinc-900 p-3 rounded-full shadow-lg border border-border hover:scale-105 active:scale-95 transition-all text-blue-600 z-10 flex items-center justify-center"
+                              title="Use my current location"
+                            >
+                              {isLocating ? (
+                                <Loader2 size={20} className="animate-spin" />
+                              ) : (
+                                <Crosshair size={20} /> 
+                              )}
+                            </button>
+
+                            <div className="absolute top-0 left-0 w-full bg-gradient-to-b from-black/50 to-transparent p-2 pointer-events-none">
+                               <p className="text-[10px] text-center text-white font-bold drop-shadow-md">
+                                 Search an area, then drag the pin to your exact building.
+                               </p>
+                            </div>
                           </div>
-                          <button 
-                            type="button"
-                            onClick={handleLocateMe}
-                            disabled={locating}
-                            className={cn(
-                              "px-5 py-2 text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 rounded-md shadow-sm",
-                              coords ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-black dark:bg-white text-white dark:text-black hover:opacity-80"
-                            )}
-                          >
-                            {locating ? <Loader2 size={14} className="animate-spin" /> : <Crosshair size={14} />}
-                            {coords ? "Update" : "Pin GPS"}
-                          </button>
-                        </div>
+                        )}
 
                         {/* SMART DISTANCE FEEDBACK */}
                         {coords ? (
-                           <div className="mt-3 flex items-center gap-3 text-[10px] bg-neutral-100 dark:bg-zinc-800 p-2 rounded border border-border">
-                              <Info size={12} className="text-blue-500" />
-                              <span>Distance: <span className="font-mono font-bold">{distanceKm.toFixed(1)}km</span> from HQ</span>
-                              <span className="h-3 w-px bg-border" />
-                              <span className={cn("font-bold", deliveryFee === 0 ? "text-emerald-600" : "text-foreground")}>
-                                {deliveryFee === 0 ? "FREE DELIVERY APPLIED" : `Tier Rate: ${formatCurrency(deliveryFee/100)}`}
+                           <div className="mt-3 flex items-center gap-3 text-[10px] bg-neutral-100 dark:bg-zinc-800 p-2 rounded border border-border animate-in fade-in">
+                              <Info size={12} className="text-blue-500 shrink-0" />
+                              <span className="truncate flex-1">
+                                {addressText} (<span className="font-mono font-bold">{distanceKm.toFixed(1)}km</span>)
+                              </span>
+                              <span className="h-3 w-px bg-border shrink-0" />
+                              <span className={cn("font-bold shrink-0", deliveryFee === 0 ? "text-emerald-600" : "text-foreground")}>
+                                {deliveryFee === 0 ? "FREE" : formatCurrency(deliveryFee/100)}
                               </span>
                            </div>
                         ) : (
                            <p className="text-[10px] text-muted-foreground mt-2 pl-1">
-                              * Tap <span className="font-bold">PIN GPS</span> to calculate the exact delivery fee.
+                              * Search or pin a location to calculate delivery fee.
                            </p>
                         )}
                      </div>
@@ -390,7 +429,6 @@ export default function CheckoutPage() {
         <div className="lg:col-span-5 relative">
            <div className="sticky top-24 space-y-6">
               
-              {/* MOBILE TOGGLE FOR SUMMARY (Visible only on small screens) */}
               <button 
                  onClick={() => setMobileSummaryOpen(!mobileSummaryOpen)}
                  className="lg:hidden w-full flex items-center justify-between bg-white dark:bg-zinc-900 p-4 rounded-lg border border-border shadow-sm"
@@ -399,18 +437,22 @@ export default function CheckoutPage() {
                  {mobileSummaryOpen ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
               </button>
 
-              {/* SUMMARY CARD */}
               <div className={cn("bg-white dark:bg-zinc-900 border border-border p-6 lg:p-8 shadow-xl rounded-xl transition-all", !mobileSummaryOpen && "hidden lg:block")}>
                   <h2 className="text-xl font-black uppercase tracking-tighter mb-6 flex items-center gap-2">
                      Your Bag <span className="text-muted-foreground text-sm font-normal">({items.length} items)</span>
                   </h2>
                   
-                  {/* Items List */}
                   <div className="space-y-4 max-h-[35vh] overflow-y-auto scrollbar-thin mb-6 pr-2">
                      {items.map(item => (
                        <div key={item.variantId} className="flex gap-4 text-sm group">
                           <div className="relative w-14 h-16 bg-secondary shrink-0 rounded overflow-hidden border border-border">
-                             <img src={item.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                             <Image 
+                               src={item.image} 
+                               alt={item.name || "Product Image"}
+                               fill
+                               sizes="(max-width: 768px) 100vw, 50vw"
+                               className="object-cover group-hover:scale-110 transition-transform duration-500" 
+                             />
                           </div>
                           <div className="flex-1 min-w-0">
                             <span className="font-bold block uppercase text-xs truncate">{item.name}</span>
@@ -424,7 +466,6 @@ export default function CheckoutPage() {
                      ))}
                   </div>
 
-                  {/* Calculations */}
                   <div className="border-t border-dashed border-border pt-4 space-y-3 text-sm">
                      <div className="flex justify-between text-muted-foreground">
                         <span>Subtotal</span>
@@ -447,13 +488,11 @@ export default function CheckoutPage() {
                      </div>
                   </div>
 
-                  {/* ACTIONS */}
                   <div className="mt-8 space-y-4">
-                     {/* Info Box */}
                      <div className="bg-secondary/50 p-3 rounded border border-border flex gap-3 items-start">
                         <Info size={16} className="text-primary mt-0.5 shrink-0" />
                         <p className="text-[10px] text-muted-foreground leading-tight">
-                           By clicking pay, you'll receive an M-Pesa prompt on <span className="font-mono font-bold text-foreground">{phone || 'your phone'}</span>.
+                           By clicking pay, you&apos;ll receive an M-Pesa prompt on <span className="font-mono font-bold text-foreground">{phone || 'your phone'}</span>.
                         </p>
                      </div>
 
@@ -466,7 +505,7 @@ export default function CheckoutPage() {
                      <button 
                        type="submit"
                        form="checkout-form" 
-                       disabled={loading || (deliveryMethod === 'delivery' && !coords) || phoneError}
+                       disabled={loading || (deliveryMethod === 'delivery' && (!coords || !addressText)) || phoneError}
                        className="w-full bg-black dark:bg-white text-white dark:text-black py-4 font-black uppercase tracking-widest hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 rounded-sm shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
                      >
                        {loading ? <Loader2 className="animate-spin" /> : `Pay ${formatCurrency(grandTotal/100)}`}

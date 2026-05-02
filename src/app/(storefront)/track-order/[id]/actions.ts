@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { initiateSTKPush } from '@/lib/services/mpesa';
 import { revalidatePath } from 'next/cache';
 
-export async function retryPayment(orderId: string) {
+export async function retryPayment(orderNumber: string) {
   // 1. INIT ADMIN CLIENT (Bypass RLS)
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,7 +16,7 @@ export async function retryPayment(orderId: string) {
   const { data: order } = await supabase
     .from('orders')
     .select('id, status, customer_phone, total_amount')
-    .eq('id', orderId)
+    .eq('order_number', orderNumber)
     .single();
 
   if (!order) {
@@ -43,7 +43,7 @@ export async function retryPayment(orderId: string) {
 
     if (error) throw new Error("Database update failed");
 
-    revalidatePath(`/track-order/${orderId}`);
+    revalidatePath(`/track-order/${orderNumber}`);
     return { success: true };
 
   } catch (e: any) {

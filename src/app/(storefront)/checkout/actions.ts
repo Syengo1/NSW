@@ -6,6 +6,19 @@ import { initiateSTKPush } from '@/lib/services/mpesa';
 // --- CONFIG: SHOP LOCATION (Westlands, Nairobi) ---
 const SHOP_LOCATION = { lat: -1.2636, lng: 36.8028 }; 
 
+// --- STRICT INTERFACES ---
+type CartItem = {
+  variantId: string;
+  quantity: number;
+};
+
+// Interface for the Supabase relational join
+interface ProductRelation {
+  title: string;
+  base_price: number;
+  sale_price: number | null;
+}
+
 // --- HELPER: Haversine Distance Calculation ---
 function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371; 
@@ -24,11 +37,6 @@ function calculateDeliveryFee(distanceKm: number): number {
   if (distanceKm <= 25) return 10000; 
   return 20000 + (Math.ceil(distanceKm - 25) * 1000); 
 }
-
-type CartItem = {
-  variantId: string;
-  quantity: number;
-};
 
 export async function processCheckout(formData: FormData, cartItems: CartItem[]) {
   const supabase = createClient(
@@ -54,14 +62,26 @@ export async function processCheckout(formData: FormData, cartItems: CartItem[])
   let calculatedDeliveryFee = 0;
   try {
     if (deliveryMethod === 'delivery') {
-      if (!coordinatesStr) throw new Error("Delivery location required");
+      if (!coordinatesStr || !addressText) throw new Error("Delivery location required");
+      
       const [lat, lng] = coordinatesStr.split(',').map(Number);
       if (isNaN(lat) || isNaN(lng)) throw new Error("Invalid location data");
+
+      // SECURITY: Rough Bounding Box for Kenya
+      if (lat < -5 || lat > 5 || lng < 33 || lng > 42) {
+        throw new Error("Delivery is currently restricted to Kenya.");
+      }
+
       const distance = calculateDistanceKm(SHOP_LOCATION.lat, SHOP_LOCATION.lng, lat, lng);
+      
+      if (distance > 100) throw new Error("Location is outside our standard delivery zone.");
+
       calculatedDeliveryFee = calculateDeliveryFee(distance);
     }
-  } catch (e) {
-    return { success: false, error: "Invalid Delivery Location" };
+  } catch (e: unknown) {
+    // FIX: Replaced `any` with `unknown` and Type Narrowing
+    const errorMessage = e instanceof Error ? e.message : "Invalid Delivery Location";
+    return { success: false, error: errorMessage };
   }
 
   try {
@@ -80,17 +100,20 @@ export async function processCheckout(formData: FormData, cartItems: CartItem[])
       const dbVariant = variants.find(v => v.id === item.variantId);
       if (!dbVariant) return { success: false, error: `Item ${item.variantId} not found` };
       
+      // FIX: Cast Supabase relational join strictly instead of using `any`
+      const product = dbVariant.products as unknown as ProductRelation;
+
       // Explicit Check before Database Constraint
-      if (dbVariant.stock_quantity < item.quantity) {
+      // Now it securely accesses product.title
+      if ((dbVariant.stock_quantity ?? 0) < item.quantity) {
         return { 
           success: false, 
-          error: `Stock unavailable for ${(dbVariant.products as any).title}. Only ${dbVariant.stock_quantity} left.` 
+          error: `Stock unavailable for ${product.title}. Only ${dbVariant.stock_quantity || 0} left.` 
         };
       }
 
-      const product = dbVariant.products as any;
       const basePrice = product.sale_price || product.base_price;
-      const unitPrice = basePrice + dbVariant.price_adjustment;
+      const unitPrice = basePrice + (dbVariant.price_adjustment ?? 0);
       
       productsTotalCents += unitPrice * item.quantity;
 
@@ -120,7 +143,7 @@ export async function processCheckout(formData: FormData, cartItems: CartItem[])
         total_amount: grandTotalCents,
         status: 'pending_payment'
       })
-      .select()
+      .select('id, order_number')
       .single();
 
     if (orderError) throw new Error(`Order Creation Failed: ${orderError.message}`);
@@ -131,11 +154,7 @@ export async function processCheckout(formData: FormData, cartItems: CartItem[])
     );
 
     if (itemsError) {
-      // HANDLE RACE CONDITION: 
-      // If someone else bought the last item milliseconds before this insert,
-      // The DB constraint 'check_stock_non_negative' will fire.
       if (itemsError.message.includes('check_stock_non_negative')) {
-        // Rollback: Delete the empty order we just created
         await supabase.from('orders').delete().eq('id', order.id);
         return { success: false, error: "One or more items just went out of stock. Please update your cart." };
       }
@@ -146,16 +165,18 @@ export async function processCheckout(formData: FormData, cartItems: CartItem[])
     try {
       const res = await initiateSTKPush(payerPhone, grandTotalCents / 100, order.id);
       await supabase.from('orders').update({ mpesa_request_id: res.checkoutRequestId }).eq('id', order.id);
-      return { success: true, orderId: order.id };
-    } catch (e: any) {
-      // SOFT FAIL: If M-Pesa API is down, don't crash the order.
-      // Return success so user sees "Processing" page and can use "Retry Payment" button.
-      console.error("Initial M-Pesa Push Failed:", e);
-      return { success: true, orderId: order.id, warning: "Payment push failed. Retry from tracking page." };
+      return { success: true, orderId: order.order_number };
+    } catch (e: unknown) {
+      // FIX: Replace `any` with `unknown` + Type Narrowing
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      console.error("Initial M-Pesa Push Failed:", errorMsg);
+      return { success: true, orderId: order.order_number, warning: "Payment push failed. Retry from tracking page." };
     }
 
-  } catch (error: any) {
-    console.error("Checkout Process Error:", error);
-    return { success: false, error: error.message || "An unexpected error occurred." };
+  } catch (error: unknown) {
+    // FIX: Replace `any` with `unknown` + Type Narrowing
+    const errorMsg = error instanceof Error ? error.message : "An unexpected error occurred.";
+    console.error("Checkout Process Error:", errorMsg);
+    return { success: false, error: errorMsg };
   }
 }

@@ -1,3 +1,5 @@
+// src/app/(storefront)/track-order/[id]/page.tsx
+
 import { createClient } from "@supabase/supabase-js"; 
 import { notFound } from "next/navigation";
 import OrderPoller from "@/components/storefront/OrderPoller";
@@ -6,6 +8,12 @@ import ReceiptDownloader from "@/components/storefront/ReceiptDownloader";
 import { Check, Clock, XCircle, ArrowRight, Package } from "lucide-react";
 import Link from "next/link";
 import { cn, formatCurrency } from "@/lib/utils";
+// 1. IMPORT NOSTORE TO PREVENT CACHING
+import { unstable_noStore as noStore } from 'next/cache';
+
+// 2. FORCE DYNAMIC PAGE RENDERING
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 // SAFE TYPE DEF FOR NEXT.JS 14 & 15 COMPATIBILITY
 type Props = {
@@ -13,7 +21,9 @@ type Props = {
 }
 
 export default async function OrderPage({ params }: Props) {
-  // Await params to be safe (works in both versions)
+  // 3. CALL NOSTORE BEFORE FETCHING
+  noStore(); 
+
   const resolvedParams = await params;
   const id = resolvedParams.id;
 
@@ -26,7 +36,7 @@ export default async function OrderPage({ params }: Props) {
   const { data: order } = await supabase
     .from('orders')
     .select(`*, order_items(*)`)
-    .eq('id', id)
+    .eq('order_number', id)
     .single();
 
   if (!order) notFound();
@@ -70,12 +80,13 @@ export default async function OrderPage({ params }: Props) {
         <div className="bg-card border border-border p-6 rounded-lg shadow-sm space-y-4">
           <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest text-muted-foreground border-b border-border pb-2">
             <span>Order ID</span>
-            <span className="font-mono text-foreground">#{order.id.slice(0,8)}</span>
+            <span className="font-mono text-foreground">{order.order_number}</span>
           </div>
 
           <div className="space-y-3">
              {order.order_items && order.order_items.length > 0 ? (
-               order.order_items.map((item: any) => (
+               // FIX: Replaced explicit `any` with safe type narrowing to improve robustness
+               order.order_items.map((item: { id: string, variant_name: string, quantity: number, price_at_purchase: number }) => (
                  <div key={item.id} className="flex justify-between text-sm">
                    <span className="uppercase font-bold text-xs">
                      {item.variant_name} 
