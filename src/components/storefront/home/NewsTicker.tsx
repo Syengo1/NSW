@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 
 // --- CONFIGURATION ---
 const MESSAGES = [
-  "WELCOME TO NAIROBI STREETWEAR!!!",
+  "WELCOME TO OP Fits!!!",
   "YOUR TRUSTED ONLINE CLOTHING SHOP...",
   "ALERT :: FREE DELIVERY ON ALL ORDERS ABOVE KES 10,000",
   "NEW DROP :: COMING SOON...",
@@ -96,7 +96,7 @@ export default function NewsTicker() {
           {!isMinimized && (
             <div className="hidden md:flex items-center gap-2 text-[9px] text-emerald-500/60 font-bold tracking-[0.2em] border-r border-emerald-500/20 pr-3 select-none">
               <Activity size={10} className="animate-pulse" />
-              <span>NSW_SYSTEM_V.1.0</span>
+              <span>opfits_SYSTEM_V.1.0</span>
             </div>
           )}
         </div>

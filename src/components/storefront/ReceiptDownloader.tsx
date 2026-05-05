@@ -27,7 +27,7 @@ export default function ReceiptDownloader({ order }: { order: any }) {
         </head>
         <body>
           <div class="header">
-            <div class="title">Nairobi Streetwear</div>
+            <div class="title">OP Fits</div>
             <div>${new Date(order.created_at).toLocaleString()}</div>
             <div>Receipt: ${order.mpesa_receipt}</div>
           </div>

@@ -18,7 +18,7 @@ const PLAYLIST = [
     id: 1,
     type: 'video',
     src: 'https://ewxf0eupwexd82yb.public.blob.vercel-storage.com/nswHero.mp4', 
-    poster: 'https://images.unsplash.com/photo-1483985988355-763728e1935b?q=80&w=2070',
+    poster: '/poster.webp',
     duration: 0, 
   },
   {
@@ -30,7 +30,7 @@ const PLAYLIST = [
   {
     id: 3,
     type: 'image',
-    src: 'https://images.unsplash.com/photo-1552374196-1ab2a1c593e8?q=80&w=2000',
+    src: '/slide2.webp',
     duration: 3000,
   }
 ];
@@ -279,7 +279,7 @@ export default function HeroSection() {
                   {/* FIX: Replaced img tag with highly optimized Next.js Image Component */}
                   <Image 
                     src={srcToRender} 
-                    alt="Nairobi Streetwear Hero Visual"
+                    alt="OP Fits Hero Visual"
                     fill
                     priority={isActive}
                     sizes="100vw"
@@ -319,14 +319,14 @@ export default function HeroSection() {
           );
         })}
         
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none z-10 brightness-100 contrast-150 mix-blend-overlay" />
+        <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-30 pointer-events-none z-10 brightness-100 contrast-150 mix-blend-overlay" />
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent z-10" />
       </div>
 
       {/* --- CONTENT LAYER --- */}
       <div className="relative z-20 h-full flex flex-col items-center justify-center text-center px-4 pt-20 animate-fade-in-up mix-blend-screen">
         <h2 className="text-sm md:text-base font-bold uppercase tracking-[0.3em] text-neutral-300 drop-shadow-lg mb-6 animate-in slide-in-from-bottom-5 duration-1000 delay-300">
-          Welcome to Nairobi Streetwear
+          Welcome to OP Fits
         </h2>
         <p className="text-3xl md:text-5xl font-black uppercase tracking-tighter max-w-3xl leading-[1.1] drop-shadow-2xl mb-6 animate-in slide-in-from-bottom-10 duration-1000 delay-500">
           Redefining the culture through fabric, form, and function.

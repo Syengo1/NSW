@@ -3,14 +3,16 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Search, ShoppingBag, Shirt } from 'lucide-react';
+// FIX 1: Swapped 'Search' for 'Compass' (Explore Icon)
+import { Home, Compass, ShoppingBag, Shirt } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useCartStore } from '@/lib/store/cart';
 
 // --- CONFIGURATION ---
 const NAV_LINKS = [
-  { href: '/search', label: 'Search', icon: Search },
+  // FIX 2: Updated the link to point to your new Explore/Lookbook page
+  { href: '/explore', label: 'Explore', icon: Compass }, 
   { href: '/', label: 'Home', icon: Home },
   { href: '/shop', label: 'Shop', icon: Shirt },
 ];
@@ -28,12 +30,20 @@ export function StorefrontNav() {
   // Logic: Transparent ONLY on Homepage AND at the very top
   const isTransparent = pathname === '/' && !isScrolled;
 
+  // FIX 3: Separated the Hydration state into its own isolated effect
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  // FIX 4: Dedicated effect for scroll physics
+  useEffect(() => {
     const handleScroll = () => {
       // Threshold 10px to switch immediately when user starts scrolling
       setIsScrolled(window.scrollY > 10);
     };
+
+    // Run once on mount to check initial position
+    handleScroll();
 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
@@ -66,12 +76,10 @@ export function StorefrontNav() {
             href="/" 
             className={cn(
               "font-black text-xl tracking-tighter transition-colors duration-500",
-              // Force white text on hero if you have dark videos, otherwise adapt
-              // Note: You might want to force 'text-white' here if your hero is always dark
               isTransparent ? "text-white drop-shadow-md" : "text-foreground"
             )}
           >
-            NAIROBI <span className={cn("transition-colors", isTransparent ? "text-white/70" : "text-muted-foreground")}>SW</span>
+            <span className={cn("transition-colors", isTransparent ? "text-white/70" : "text-muted-foreground")}>OP</span>FITS
           </Link>
           
           {/* DESKTOP LINKS */}
@@ -122,7 +130,7 @@ export function StorefrontNav() {
         className={cn(
           "md:hidden fixed bottom-0 left-0 right-0 z-[50]",
           "bg-background/95 backdrop-blur-xl border-t border-border",
-          "pb-[env(safe-area-inset-bottom)]", // iOS Home Bar Safety
+          "pb-[env(safe-area-inset-bottom)]", // iOS Home Bar
           "shadow-[0_-5px_10px_rgba(0,0,0,0.05)]"
         )}
       >

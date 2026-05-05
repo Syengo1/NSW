@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { initiateSTKPush } from '@/lib/services/mpesa';
 
 // --- CONFIG: SHOP LOCATION (Westlands, Nairobi) ---
-const SHOP_LOCATION = { lat: -1.2636, lng: 36.8028 }; 
+const SHOP_LOCATION = { lat: -1.3554, lng: 36.6562 }; 
 
 // --- STRICT INTERFACES ---
 type CartItem = {
@@ -33,9 +33,10 @@ function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: num
 
 function calculateDeliveryFee(distanceKm: number): number {
   if (distanceKm <= 8) return 0;
-  if (distanceKm <= 20) return 0; 
-  if (distanceKm <= 25) return 10000; 
-  return 20000 + (Math.ceil(distanceKm - 25) * 1000); 
+  if (distanceKm <= 20) return 150 * 100;
+  if (distanceKm <= 35) return 200 * 100; 
+  if (distanceKm <= 60) return 300 * 100; 
+  return 1000 * 100; 
 }
 
 export async function processCheckout(formData: FormData, cartItems: CartItem[]) {

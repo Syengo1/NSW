@@ -18,8 +18,8 @@ import AddressAutocomplete from '@/components/storefront/AddressAutocomplete';
 import { GoogleMap, Marker, useLoadScript } from '@react-google-maps/api';
 
 // --- CONFIG ---
-const SHOP_LAT = -1.2636;
-const SHOP_LNG = 36.8028;
+const SHOP_LAT = -1.3554;
+const SHOP_LNG = 36.6562;
 const LIBRARIES: ("places")[] = ["places"];
 const KENYA_PHONE_REGEX = /^(?:254|\+254|0)?((?:7|1)(?:(?:[0-9][0-9])|(?:[0-9][0-9])|(?:[0-9][0-9]))[0-9]{6})$/;
 
@@ -71,9 +71,10 @@ export default function CheckoutPage() {
       setDistanceKm(d);
 
       if (d <= 8) setDeliveryFee(0);
-      else if (d <= 20) setDeliveryFee(0); 
-      else if (d <= 25) setDeliveryFee(10000); 
-      else setDeliveryFee(20000 + (Math.ceil(d - 25) * 1000));
+      else if (d <= 20) setDeliveryFee(15000);
+      else if (d <= 35) setDeliveryFee(20000); 
+      else if (d <= 60) setDeliveryFee(30000); 
+      else setDeliveryFee(100000);
     }
   }, [coords, deliveryMethod]);
 
@@ -259,7 +260,7 @@ export default function CheckoutPage() {
                    <div className="flex gap-4 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-300 rounded-lg">
                      <Store size={20} className="shrink-0 mt-1" />
                      <div>
-                       <p className="font-bold uppercase text-sm">The Alchemist, Westlands</p>
+                       <p className="font-bold uppercase text-sm">OP FITS, Ngong</p>
                        <p className="text-xs opacity-80 mt-1">Ready for pickup within 2 hours.</p>
                        <p className="text-[10px] font-mono mt-2 bg-white/50 dark:bg-black/20 w-fit px-2 py-0.5 rounded">Open Mon-Sat, 10am - 8pm</p>
                      </div>
@@ -358,7 +359,7 @@ export default function CheckoutPage() {
                      </div>
                      
                      <div>
-                        <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2 block">House / Apt Details (Optional)</label>
+                        <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2 block">House/Apt NO (For Doorstep Delivery Within Nairobi Metro)</label>
                         <input name="houseDetails" placeholder="e.g. Block B, Door 4, Gate code..." className="w-full bg-secondary border border-border p-3 text-sm focus:border-primary outline-none rounded-md transition-all" />
                      </div>
                    </div>

@@ -115,8 +115,11 @@ export default function FeaturedManager({ allProducts, saleProducts, categories 
         {/* 2. SALES SLIDER (Top Deals) */}
         {filteredSales.length > 0 && (
           <section className="py-12 snap-start scroll-pt-28 relative">
-            {/* Subtle background glow for the sale section */}
-<div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-full bg-red-500/15 dark:bg-red-500/5 blur-[100px] -z-10 pointer-events-none rounded-full" />
+            {/* AMBIENT LIGHTING SYSTEM */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-full bg-red-600/10 dark:bg-red-600/5 blur-[100px] -z-10 pointer-events-none rounded-full" />
+            
+            {/* 2. Core Heartbeat */}
+            <div className="absolute top-[15%] left-1/2 -translate-x-1/2 w-[50%] h-[70%] bg-red-500/15 dark:bg-red-500/10 blur-[80px] -z-10 pointer-events-none rounded-full animate-breathe mix-blend-screen" />
             
             <div className="container mx-auto px-4 flex flex-col md:flex-row items-start md:items-end justify-between mb-6 gap-2">
                <div className="flex items-center gap-1">
@@ -127,6 +130,8 @@ export default function FeaturedManager({ allProducts, saleProducts, categories 
                       alt="Sale Icon" 
                       width={18} 
                       height={18}
+                      style={{ width: 'auto', height: 'auto' }}
+                      className="invert brightness-0"
                     />
                   </div>
                   <div>

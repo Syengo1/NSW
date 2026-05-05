@@ -147,7 +147,7 @@ export default function SmartSlider({ products, isInfinite = false }: SmartSlide
 
         {/* --- INTELLIGENT "VIEW ALL" CARD --- */}
         {!isInfinite && (
-          <div className="flex-shrink-0 w-[140px] sm:w-[160px] md:w-[200px] snap-start flex items-center justify-center h-full aspect-[3/4.5]">
+          <div className="flex-shrink-0 w-[140px] sm:w-[160px] md:w-[200px] snap-start flex items-center justify-center h-full aspect-[3/4.05]">
             <Link 
               href={viewAllLink}
               className="group flex flex-col items-center justify-center gap-2 p-4 text-center border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-xl w-full h-full hover:border-black dark:hover:border-white hover:bg-neutral-50 dark:hover:bg-white/5 transition-all duration-300"

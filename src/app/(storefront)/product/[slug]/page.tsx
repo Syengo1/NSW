@@ -24,7 +24,7 @@ export async function generateMetadata({
 
   return {
     title: product.title,
-    description: product.description || 'Exclusive drop from Nairobi Streetwear.',
+    description: product.description || 'Exclusive drop from OP Fits.',
     openGraph: { images: [mainImage] },
   };
 }

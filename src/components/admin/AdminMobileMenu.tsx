@@ -50,8 +50,8 @@ export function AdminMobileMenu() {
       />
       <div className="relative flex-1 max-w-[85vw] w-full bg-background border-r-2 border-primary/20 p-6 shadow-2xl animate-in slide-in-from-left duration-300 ease-out flex flex-col h-full">
         <div className="flex items-center justify-between mb-8">
-            <span className="font-black text-2xl tracking-tighter uppercase select-none">
-            Nairobi <span className="text-muted-foreground">SW</span>
+            <span className="text-muted-foreground">
+            OP<span className="font-black text-2xl tracking-tighter uppercase select-none">FITS</span>
           </span>
           <button 
             onClick={() => setIsOpen(false)}

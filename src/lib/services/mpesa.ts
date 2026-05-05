@@ -140,7 +140,7 @@ export async function initiateSTKPush(phoneNumber: string, amount: number, order
       PartyB: shortcode,
       PhoneNumber: formattedPhone,
       CallBackURL: `${appUrl}/api/mpesa/callback?secret=${callbackSecret}`,
-      AccountReference: "NSW_STORE", // Safaricom limit is 12 chars, keeping it short
+      AccountReference: "opfits", // Safaricom limit is 12 chars, keeping it short
       TransactionDesc: `Order ${orderId}`
     };
 

@@ -8,9 +8,9 @@ import { cn } from "@/lib/utils";
 // --- 1. SMART METADATA ---
 export async function generateMetadata({ searchParams }: { searchParams: Promise<{ q?: string; category?: string }> }) {
   const params = await searchParams;
-  if (params.q) return { title: `Search: "${params.q}" | Nairobi Streetwear` };
-  if (params.category) return { title: `${params.category} Collection | Nairobi Streetwear` };
-  return { title: 'Shop All Drops | Nairobi Streetwear' };
+  if (params.q) return { title: `Search: "${params.q}" | OP Fits` };
+  if (params.category) return { title: `${params.category} Collection | OP Fits` };
+  return { title: 'Shop All Drops | OP Fits' };
 }
 
 // Keep data fresh but cached briefly for speed

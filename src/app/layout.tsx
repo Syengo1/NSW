@@ -20,17 +20,17 @@ const oswald = Oswald({
 // 3. World Class Metadata Configuration
 export const metadata: Metadata = {
   title: {
-    default: "Nairobi Streetwear | Redefining The Culture",
-    template: "%s | Nairobi Streetwear"
+    default: "OP Fits | Redefining The Culture",
+    template: "%s | OP Fits"
   },
   description: "Premium streetwear crafted for the bold. Est. 2026 in Nairobi. Limited drops, exclusive fabrics, and authentic culture.",
   keywords: ["Streetwear", "Nairobi", "Kenya", "Fashion", "Drops", "Hoodies", "Urban Culture"],
-  authors: [{ name: "Nairobi Streetwear" }],
+  authors: [{ name: "OP Fits" }],
   openGraph: {
     type: "website",
     locale: "en_KE",
-    siteName: "Nairobi Streetwear",
-    title: "Nairobi Streetwear",
+    siteName: "OP Fits",
+    title: "OP Fits",
     description: "Premium streetwear crafted for the bold.",
   },
   icons: {

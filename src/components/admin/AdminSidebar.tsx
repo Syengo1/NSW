@@ -24,7 +24,7 @@ export default function AdminSidebar() {
       {/* BRAND */}
       <div className="h-16 flex items-center px-6 border-b border-border">
         <span className="font-black text-xl tracking-tighter uppercase">
-          Nairobi <span className="text-muted-foreground">SW</span>
+          OP<span className="text-muted-foreground">FITS</span>
         </span>
       </div>
 

@@ -2,17 +2,24 @@
 
 import { useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import Image from 'next/image'; // Upgrade to Next/Image for performance
+import Image from 'next/image';
 import { cn, formatCurrency } from '@/lib/utils';
-import { ArrowUpRight, ShoppingBag, AlertCircle, Loader2, Check } from 'lucide-react';
+import { ArrowUpRight, ShoppingBag, AlertCircle, Loader2, Check, ImageIcon } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client'; 
 import { useCartStore } from '@/lib/store/cart'; 
 import { toast } from 'sonner';
 import QuickAddModal from './QuickAddModal';
 
-// --- CONFIG: SIZING SYSTEM ---
-// Allows the card to adapt to different grid contexts (Featured vs Grid vs Sidebar)
+// --- STRICT TYPES ---
 type CardSize = 'sm' | 'md' | 'lg';
+
+export interface ProductVariant {
+  id: string;
+  size: string;
+  color: string;
+  stock_quantity: number;
+  price_adjustment: number;
+}
 
 interface ProductCardProps {
   id: string;
@@ -25,9 +32,18 @@ interface ProductCardProps {
   status: 'active' | 'draft' | 'dropping_soon' | 'archived';
   description?: string;
   totalStock?: number;
-  size?: CardSize; // New Prop for sizing control
-  priority?: boolean; // New Prop for LCP optimization
+  size?: CardSize;
+  priority?: boolean;
 }
+
+// --- UTILITY: SAFE IMAGE VALIDATION ---
+// This prevents Next.js crashes if your DB still contains old Unsplash URLs
+const isValidImageUrl = (url: string) => {
+  if (!url) return false;
+  if (url.startsWith('/')) return true; // Local files are always safe
+  // Ensure the URL matches your exactly allowed Supabase/Vercel buckets
+  return url.includes('supabase.co') || url.includes('vercel-storage.com');
+};
 
 export default function ProductCard({ 
   id,
@@ -40,18 +56,18 @@ export default function ProductCard({
   status,
   description,
   totalStock = 0,
-  size = 'md', // Default to medium standard
+  size = 'md', 
   priority = false
 }: ProductCardProps) {
   const { addItem } = useCartStore(); 
   const [adding, setAdding] = useState(false);
   const [justAdded, setJustAdded] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false); // Used for smooth skeleton loading
   
-  // --- INTELLIGENT PRE-FETCH STATE ---
-  const [prefetchedVariants, setPrefetchedVariants] = useState<any[] | null>(null);
-  const isFetching = useRef(false); // Ref to prevent double fetching
+  // FIX: Replaced 'any' with the strict 'ProductVariant' interface
+  const [prefetchedVariants, setPrefetchedVariants] = useState<ProductVariant[] | null>(null);
+  const isFetching = useRef(false); 
 
-  // --- MODAL STATE ---
   const [showModal, setShowModal] = useState(false);
 
   // --- LOGIC ENGINE ---
@@ -63,8 +79,10 @@ export default function ProductCard({
   const displayPrice = salePrice ? salePrice / 100 : price / 100;
   const originalPrice = price / 100;
 
+  // Evaluate image safety before rendering
+  const safeImageToRender = isValidImageUrl(image) ? image : null;
+
   // --- STYLE MAPPING ---
-  // Centralized styles for easy resizing logic
   const styles = {
     sm: {
       title: "text-xs",
@@ -96,7 +114,6 @@ export default function ProductCard({
   }[size];
 
   // --- SMART FETCHING ---
-  // Fetches variants silently on hover so click is instant
   const prefetchVariants = useCallback(async () => {
     if (prefetchedVariants || isSoldOut || isFetching.current) return;
     
@@ -111,7 +128,7 @@ export default function ProductCard({
         .gt('stock_quantity', 0)
         .order('price_adjustment', { ascending: true }); 
       
-      if (variants) setPrefetchedVariants(variants);
+      if (variants) setPrefetchedVariants(variants as ProductVariant[]);
     } catch (e) {
       console.error("Prefetch failed", e);
     } finally {
@@ -128,7 +145,6 @@ export default function ProductCard({
     setAdding(true);
 
     try {
-      // Use prefetched data if available, otherwise fetch now
       let variants = prefetchedVariants;
       
       if (!variants) {
@@ -140,7 +156,7 @@ export default function ProductCard({
           .eq('is_active', true)
           .gt('stock_quantity', 0)
           .order('price_adjustment', { ascending: true }); 
-        variants = data;
+        variants = data as ProductVariant[];
       }
 
       if (!variants || variants.length === 0) {
@@ -149,7 +165,6 @@ export default function ProductCard({
         return;
       }
 
-      // AUTO-ADD (Single Variant)
       if (variants.length === 1) {
         const v = variants[0];
         const finalPriceCents = price + (v.price_adjustment || 0); 
@@ -159,7 +174,7 @@ export default function ProductCard({
           productId: id,
           name: title,
           price: finalPriceCents,
-          image: image,
+          image: safeImageToRender || '', // Fallback for cart image
           quantity: 1,
           size: v.size,
           color: v.color, 
@@ -175,8 +190,6 @@ export default function ProductCard({
         }, 2000);
         
       } else {
-        // OPEN MODAL (Multiple Variants)
-        // We set the cached variants to state so modal opens instantly
         setPrefetchedVariants(variants); 
         setShowModal(true);
         setAdding(false);
@@ -192,33 +205,45 @@ export default function ProductCard({
     <>
       <Link 
         href={`/product/${slug}`} 
-        // Trigger prefetch on hover
         onMouseEnter={prefetchVariants}
+        // Focus state added for accessibility
         className={cn(
-          "group flex flex-col h-full relative select-none cursor-pointer outline-none",
+          "group flex flex-col h-full relative select-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-xl",
           isSoldOut && "opacity-60 grayscale-[0.5]" 
         )}
       >
         {/* 1. IMAGE CONTAINER */}
-        <div className="relative aspect-4/5 w-full overflow-hidden rounded-xl bg-secondary/10 group-hover:shadow-2xl transition-all duration-500 ease-out isolate">
+        <div className="relative aspect-4/5 w-full overflow-hidden rounded-xl bg-secondary/20 group-hover:shadow-2xl transition-all duration-500 ease-out isolate">
           
-          {image ? (
+          {/* Skeleton Loader - Pulses until image loads */}
+          {!imageLoaded && safeImageToRender && (
+             <div className="absolute inset-0 bg-secondary animate-pulse z-0" />
+          )}
+
+          {safeImageToRender ? (
             <Image 
-              src={image} 
+              src={safeImageToRender} 
               alt={title}
               fill
-              sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
+              sizes="(max-width: 640px) 65vw, (max-width: 1024px) 33vw, 25vw"
               priority={priority}
-              className="object-cover transition-transform duration-700 ease-out group-hover:scale-105 will-change-transform"
+              onLoad={() => setImageLoaded(true)}
+              className={cn(
+                "object-cover transition-all duration-700 ease-out will-change-transform z-10",
+                imageLoaded ? "opacity-100" : "opacity-0",
+                "group-hover:scale-105"
+              )}
             />
           ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/30 bg-secondary/20">
-              <span className="text-[10px] font-black uppercase tracking-widest">No Image</span>
+            // Premium Fallback State
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/30 bg-secondary/10 z-10 border border-border/50 border-dashed rounded-xl">
+              <ImageIcon size={32} className="mb-2 opacity-50" />
+              <span className="text-[10px] font-black uppercase tracking-widest">Image Unavailable</span>
             </div>
           )}
 
-          {/* Dark Overlay */}
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-300 z-10" />
+          {/* Dark Overlay for better button contrast on hover */}
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 z-10 pointer-events-none" />
           
           {/* Status Badges */}
           <div className={cn("absolute top-3 left-3 flex flex-col z-20 items-start", styles.gap)}>
@@ -250,16 +275,14 @@ export default function ProductCard({
           {/* ACTION BUTTONS */}
           {!isSoldOut && (
             <div className={cn(
-               "absolute bottom-3 right-3 flex z-20 transition-all duration-300 ease-out",
+               "absolute bottom-3 right-3 flex z-20 transition-all duration-400 ease-[cubic-bezier(0.23,1,0.32,1)]",
                styles.gap,
-               // Mobile: Always visible
                "opacity-100 translate-y-0",
-               // Desktop: Slide up on hover
-               "md:opacity-0 md:translate-y-4 md:group-hover:translate-y-0 md:group-hover:opacity-100"
+               "md:opacity-0 md:translate-y-8 md:group-hover:translate-y-0 md:group-hover:opacity-100"
             )}>
               
               <div className={cn(
-                "bg-white/90 dark:bg-black/90 backdrop-blur text-foreground rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform cursor-pointer border border-border/10",
+                "bg-white/90 dark:bg-neutral-900/90 backdrop-blur-md text-foreground rounded-full flex items-center justify-center shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:scale-110 transition-transform cursor-pointer border border-border/20",
                 styles.iconBox
               )}>
                 <ArrowUpRight size={styles.iconSize} strokeWidth={2.5} />
@@ -268,66 +291,65 @@ export default function ProductCard({
               <button 
                 onClick={handleQuickAdd}
                 disabled={adding}
-                // Mobile Hit Area Expansion
+                aria-label="Quick Add to Bag"
                 className={cn(
-                  "rounded-full flex items-center justify-center shadow-lg transition-all border border-border/10 relative",
+                  "rounded-full flex items-center justify-center shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-all border border-border/20 relative",
                   styles.iconBox,
-                  justAdded ? "bg-emerald-600 text-white" : "bg-black dark:bg-white text-white dark:text-black hover:scale-110 active:scale-95"
+                  justAdded 
+                    ? "bg-emerald-600 border-emerald-600 text-white" 
+                    : "bg-black dark:bg-white text-white dark:text-black hover:scale-110 active:scale-95"
                 )}
               >
-                {/* Invisible hit area for mobile usability */}
-                <span className="absolute -inset-2 md:inset-0" /> 
+                <span className="absolute -inset-3 md:inset-0" /> 
                 
                 {adding ? (
-                  <Loader2 size={styles.iconSize} className="animate-spin" />
+                  <Loader2 size={styles.iconSize} className="animate-spin text-current" />
                 ) : justAdded ? (
-                  <Check size={styles.iconSize} strokeWidth={3} />
+                  <Check size={styles.iconSize} strokeWidth={3} className="text-white" />
                 ) : (
-                  <ShoppingBag size={styles.iconSize} strokeWidth={2.5} />
+                  <ShoppingBag size={styles.iconSize} strokeWidth={2.5} className="text-current" />
                 )}
               </button>
             </div>
           )}
         </div>
 
-        {/* 2. DETAILS */}
+        {/* 2. DETAILS (Editorial Typography) */}
         <div className="pt-4 flex flex-col flex-1 space-y-1">
           <div className="flex justify-between items-start gap-4">
             <div className="space-y-0.5 w-full">
-              <p className={cn("text-muted-foreground/70 font-mono uppercase tracking-widest line-clamp-1", styles.cat)}>
+              <p className={cn("text-muted-foreground font-mono uppercase tracking-widest line-clamp-1", styles.cat)}>
                 {category}
               </p>
-              {/* Glitch Effect on Title Hover */}
               <h3 className={cn(
-                "font-black uppercase leading-none text-foreground line-clamp-1 transition-colors",
+                "font-black uppercase leading-tight tracking-tighter text-foreground line-clamp-1 transition-colors duration-300",
                 styles.title,
-                // Custom glitch hover class (requires tailwind config or global css, simplified here as color shift)
-                "group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-primary group-hover:to-purple-500"
+                "group-hover:text-primary"
               )}>
                 {title}
               </h3>
             </div>
           </div>
 
-          <div className="min-h-[2.2em] overflow-hidden">
-            <p className="text-[10px] text-muted-foreground/60 leading-tight line-clamp-2">
+          <div className="min-h-[2.4em] overflow-hidden pt-1">
+            <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-2 pr-4">
               {description || "Premium streetwear crafted for the bold."}
             </p>
           </div>
 
-          <div className="mt-auto pt-2 flex items-center gap-2 border-t border-border/30">
+          <div className="mt-auto pt-3 flex items-center gap-2 border-t border-border/20">
             <div className="flex flex-col">
               {isOnSale ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <span className={cn("font-black text-red-600", styles.price)}>
                     {formatCurrency(displayPrice)}
                   </span>
-                  <span className={cn("text-muted-foreground line-through decoration-red-500/50 decoration-2", styles.cat)}>
+                  <span className={cn("text-muted-foreground/60 font-medium line-through decoration-muted-foreground/30 decoration-1", styles.cat)}>
                     {formatCurrency(originalPrice)}
                   </span>
                 </div>
               ) : (
-                <span className={cn("font-black text-foreground", styles.price)}>
+                <span className={cn("font-black text-foreground tracking-tight", styles.price)}>
                   {formatCurrency(displayPrice)}
                 </span>
               )}
@@ -336,12 +358,11 @@ export default function ProductCard({
         </div>
       </Link>
 
-      {/* QUICK ADD MODAL */}
       <QuickAddModal 
         isOpen={showModal} 
         onClose={() => setShowModal(false)}
-        product={{ id, title, price, salePrice, image, slug }} 
-        variants={prefetchedVariants || []} // Use our smart prefetched data
+        product={{ id, title, price, salePrice, image: safeImageToRender || '', slug }} 
+        variants={prefetchedVariants || []} 
       />
     </>
   );

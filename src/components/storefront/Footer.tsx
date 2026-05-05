@@ -10,7 +10,7 @@ export default function Footer() {
         
         {/* BRAND */}
         <div className="space-y-4">
-          <h2 className="text-white text-2xl font-black uppercase tracking-tighter">NSW.</h2>
+          <h2 className="text-white text-2xl font-black uppercase tracking-tighter">opfits.</h2>
           <p className="text-xs leading-relaxed max-w-xs">
             Authentic Nairobi culture woven into every thread. 
             Premium streetwear designed for the bold.
@@ -49,7 +49,7 @@ export default function Footer() {
 
       {/* DESIGNER TAG (Secret Animation) */}
       <div className="container mx-auto px-6 mt-20 pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] uppercase tracking-widest">
-        <p>&copy; {new Date().getFullYear()} Nairobi Streetwear. All rights reserved.</p>
+        <p>&copy; {new Date().getFullYear()} OPFits. All rights reserved.</p>
         
         <a 
           href="https://antony-syengo.vercel.app" 
