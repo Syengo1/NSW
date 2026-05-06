@@ -10,6 +10,7 @@ import Image from 'next/image';
 // --- STRICT TYPES ---
 type FilterType = 'all' | 'men' | 'women';
 
+// FIX: Aligned interface to perfectly match what SmartSlider & ProductCard demand.
 export interface Product {
   id: string;
   title: string;
@@ -19,6 +20,8 @@ export interface Product {
   category: string;
   description: string;
   main_image: string;
+  hover_image?: string | null; // Added for the Lifestyle Reveal
+  status: 'active' | 'draft' | 'dropping_soon' | 'archived'; // Added for strict typing
   total_stock: number;
   discountPct: number;
   gender: string;
@@ -42,17 +45,14 @@ export default function FeaturedManager({ allProducts, saleProducts, categories 
     setTimeout(() => setIsChanging(false), 300); 
   };
 
-  // --- FIX: REACT HOOKS EXHAUSTIVE DEPS & MEMOIZATION ---
-  // By moving the filter logic directly inside the useMemo, we prevent React from 
-  // destroying the memoization on every render, solving the ESLint errors permanently.
+  // --- REACT HOOKS EXHAUSTIVE DEPS & MEMOIZATION ---
   const filteredSales = useMemo(() => {
     return saleProducts.filter((p) => {
       if (activeFilter === 'all') return true;
       
-      // Fallback: If an old product was created before you added the gender column, show it by default
+      // Fallback: If an old product was created before gender column
       if (!p.gender) return true; 
 
-      // Strict matching based on the exact dropdown values from your Admin Product Creation page
       if (activeFilter === 'women') return p.gender === 'women' || p.gender === 'unisex';
       if (activeFilter === 'men') return p.gender === 'men' || p.gender === 'unisex';
       
@@ -79,7 +79,7 @@ export default function FeaturedManager({ allProducts, saleProducts, categories 
       {/* 1. STICKY FILTER CONTROL (Premium Glassmorphism) */}
       <div className="sticky top-16 z-30 pointer-events-none pt-4 pb-2">
         <div className="container mx-auto px-4 flex justify-center md:justify-start">
-           <div className="pointer-events-auto inline-flex items-center gap-1 p-1.5 rounded-full bg-background/70 backdrop-blur-2xl border border-border/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.5)] transition-transform hover:scale-[1.02]">
+           <div className="pointer-events-auto inline-flex items-center gap-1 p-1.5 rounded-full bg-background/70 backdrop-blur-2xl border border-border/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(255,255,255,0.05)] transition-transform hover:scale-[1.02]">
               
               <div className="pl-4 pr-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-r border-border/50 mr-1 h-6">
                  <Filter size={12} /> 
@@ -118,13 +118,12 @@ export default function FeaturedManager({ allProducts, saleProducts, categories 
             {/* AMBIENT LIGHTING SYSTEM */}
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-full bg-red-600/10 dark:bg-red-600/5 blur-[100px] -z-10 pointer-events-none rounded-full" />
             
-            {/* 2. Core Heartbeat */}
+            {/* Core Heartbeat */}
             <div className="absolute top-[15%] left-1/2 -translate-x-1/2 w-[50%] h-[70%] bg-red-500/15 dark:bg-red-500/10 blur-[80px] -z-10 pointer-events-none rounded-full animate-breathe mix-blend-screen" />
             
             <div className="container mx-auto px-4 flex flex-col md:flex-row items-start md:items-end justify-between mb-6 gap-2">
                <div className="flex items-center gap-1">
-                  {/* FIX: Replaced Lucide Icon with your Custom SVG */}
-                  <div className="  shadow-lg shadow-red-600 flex items-center justify-center animate-pulse">
+                  <div className="shadow-lg shadow-red-600 flex items-center justify-center animate-pulse">
                     <Image 
                       src="/sale.svg" 
                       alt="Sale Icon" 
@@ -158,7 +157,6 @@ export default function FeaturedManager({ allProducts, saleProducts, categories 
 
         {/* 3. CATEGORY COLLECTIONS */}
         {categories.map((cat: string) => {
-          // FIX: Explicitly typed 'p' as 'Product' to fix the final 'any' error
           const catProducts = filteredCatalog.filter((p: Product) => p.category === cat);
           if (catProducts.length === 0) return null;
 
