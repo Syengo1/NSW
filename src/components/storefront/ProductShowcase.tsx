@@ -202,7 +202,7 @@ export default function ProductShowcase({ product }: ProductShowcaseProps) {
                   <span className="text-2xl font-black text-red-600 font-mono">
                     {formatCurrency(currentSalePrice)}
                   </span>
-                  <span className="text-lg text-muted-foreground line-through decoration-red-500/30 font-mono">
+                  <span className="text-lg text-muted-foreground line-through decoration-red-500 font-mono">
                     {formatCurrency(currentBasePrice)}
                   </span>
                   <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 text-[10px] font-black uppercase tracking-widest rounded">
