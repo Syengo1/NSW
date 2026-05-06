@@ -129,8 +129,7 @@ export default function FeaturedManager({ allProducts, saleProducts, categories 
                       alt="Sale Icon" 
                       width={18} 
                       height={18}
-                      style={{ width: 'auto', height: 'auto' }}
-                      className="invert brightness-0"
+                      className="dark:invert"
                     />
                   </div>
                   <div>
