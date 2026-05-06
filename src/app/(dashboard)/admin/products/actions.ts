@@ -1,6 +1,7 @@
 'use server';
 
-import { createClient } from "@supabase/supabase-js"; // Switch to Master Client
+import { createClient as createAdminClient } from "@supabase/supabase-js"; 
+import { createClient as createServerClient } from '@/lib/supabase/server'; // Standard auth client
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
@@ -12,9 +13,19 @@ export type VariantInput = {
   priceDiff: number;
 };
 
-// HELPER: Get Admin Client
-function getAdminClient() {
-  return createClient(
+// --- SECURITY HELPER ---
+// Ensures ONLY logged-in admins can trigger these actions
+async function verifyAdminAndGetClient() {
+  const authClient = await createServerClient();
+  const { data: { user }, error } = await authClient.auth.getUser();
+
+  // Validate session (Adjust this check based on how you assign admin roles)
+  if (error || !user || user.user_metadata?.role !== 'admin') {
+    throw new Error("UNAUTHORIZED: Action denied.");
+  }
+
+  // If verified, return the bypass-RLS client to perform the database operations
+  return createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { persistSession: false } }
@@ -23,7 +34,7 @@ function getAdminClient() {
 
 // --- 1. GHOST MODE ACTION ---
 export async function toggleProductVisibility(id: string, currentStatus: boolean) {
-  const supabase = getAdminClient();
+  const supabase = await verifyAdminAndGetClient(); // SECURITY CHECK
   
   const { error } = await supabase
     .from('products')
@@ -43,9 +54,9 @@ export async function updateQuickEdit(
   id: string, 
   value: number
 ) {
-  const supabase = getAdminClient();
-
   try {
+    const supabase = await verifyAdminAndGetClient(); // SECURITY CHECK
+
     if (type === 'product_price') {
       const { error } = await supabase
         .from('products')
@@ -64,8 +75,10 @@ export async function updateQuickEdit(
 
     revalidatePath('/admin/products');
     return { success: true };
-  } catch (error: any) {
-    return { success: false, message: error.message };
+  } catch (error: unknown) {
+    // FIX: Replaced 'any' with 'unknown' for strict TS safety
+    const msg = error instanceof Error ? error.message : "Quick edit failed";
+    return { success: false, message: msg };
   }
 }
 
@@ -75,14 +88,18 @@ export async function createProductDrop(
   variants: VariantInput[], 
   imageUrls: { url: string; color?: string }[]
 ) {
-  const supabase = getAdminClient();
+  const supabase = await verifyAdminAndGetClient(); // SECURITY CHECK
 
   // A. EXTRACT & VALIDATE
   const title = formData.get('title') as string;
   const description = formData.get('description') as string;
-  const basePrice = Math.round(parseFloat(formData.get('basePrice') as string) * 100); 
   const category = formData.get('category') as string;
   const gender = formData.get('gender') as string;
+
+  // FIX: Safe parsing to prevent NaN errors
+  const rawBase = parseFloat(formData.get('basePrice') as string);
+  if (isNaN(rawBase)) throw new Error("Base price must be a valid number.");
+  const basePrice = Math.round(rawBase * 100); 
 
   const salePriceInput = formData.get('salePrice');
   const salePrice = salePriceInput && salePriceInput !== '' 
@@ -109,40 +126,46 @@ export async function createProductDrop(
       status: 'active',
       is_visible: true 
     })
-    .select()
+    .select('id') // Only request the ID to save bandwidth
     .single();
 
-  if (prodError) throw new Error(`Failed to create drop: ${prodError.message}`);
+  if (prodError || !product) throw new Error(`Failed to create drop: ${prodError?.message}`);
 
-  // C. CREATE VARIANTS
-  const variantsToInsert = variants.map(v => ({
-    product_id: product.id,
-    size: v.size,
-    color: v.color,
-    sku: v.sku.toUpperCase(),
-    stock_quantity: v.stock,
-    price_adjustment: v.priceDiff,
-    is_active: true
-  }));
-
-  const { error: varError } = await supabase.from('variants').insert(variantsToInsert);
-  
-  if (varError) {
-    await supabase.from('products').delete().eq('id', product.id);
-    throw new Error(`Variant Error: ${varError.message}`);
-  }
-
-  // D. LINK IMAGES
-  if (imageUrls.length > 0) {
-    const imagesToInsert = imageUrls.map((img, index) => ({
+  // C. TRANSACTION WRAPPER (Variants & Images)
+  try {
+    const variantsToInsert = variants.map(v => ({
       product_id: product.id,
-      url: img.url,
-      color_tag: img.color || null, 
-      display_order: index
+      size: v.size,
+      color: v.color,
+      sku: v.sku.toUpperCase(),
+      stock_quantity: v.stock,
+      price_adjustment: v.priceDiff,
+      is_active: true
     }));
-    await supabase.from('product_images').insert(imagesToInsert);
+
+    const { error: varError } = await supabase.from('variants').insert(variantsToInsert);
+    if (varError) throw new Error(`Variant Error: ${varError.message}`);
+
+    if (imageUrls.length > 0) {
+      const imagesToInsert = imageUrls.map((img, index) => ({
+        product_id: product.id,
+        url: img.url,
+        color_tag: img.color || null, 
+        display_order: index
+      }));
+      const { error: imgError } = await supabase.from('product_images').insert(imagesToInsert);
+      if (imgError) throw new Error(`Image Error: ${imgError.message}`);
+    }
+
+  } catch (creationError) {
+    // FIX: ROBUST ROLLBACK. If variants OR images fail, we wipe the parent product.
+    // Assuming your DB uses `ON DELETE CASCADE`, this will cleanly erase any partial data.
+    console.error("Creation failed, initiating rollback...", creationError);
+    await supabase.from('products').delete().eq('id', product.id);
+    throw creationError; 
   }
 
+  // D. FINALIZE
   revalidatePath('/admin/products');
   redirect('/admin/products');
 }

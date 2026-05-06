@@ -28,6 +28,7 @@ interface ProductCardProps {
   price: number;
   salePrice?: number | null;
   image: string;
+  hoverImage?: string | null;
   category: string;
   status: 'active' | 'draft' | 'dropping_soon' | 'archived';
   description?: string;
@@ -37,8 +38,9 @@ interface ProductCardProps {
 }
 
 // --- UTILITY: SAFE IMAGE VALIDATION ---
+
 // This prevents Next.js crashes if your DB still contains old Unsplash URLs
-const isValidImageUrl = (url: string) => {
+const isValidImageUrl = (url?: string | null) => {
   if (!url) return false;
   if (url.startsWith('/')) return true; // Local files are always safe
   // Ensure the URL matches your exactly allowed Supabase/Vercel buckets
@@ -52,6 +54,7 @@ export default function ProductCard({
   price, 
   salePrice,
   image, 
+  hoverImage,
   category, 
   status,
   description,
@@ -63,6 +66,7 @@ export default function ProductCard({
   const [adding, setAdding] = useState(false);
   const [justAdded, setJustAdded] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false); // Used for smooth skeleton loading
+  
   
   // FIX: Replaced 'any' with the strict 'ProductVariant' interface
   const [prefetchedVariants, setPrefetchedVariants] = useState<ProductVariant[] | null>(null);
@@ -81,6 +85,7 @@ export default function ProductCard({
 
   // Evaluate image safety before rendering
   const safeImageToRender = isValidImageUrl(image) ? image : null;
+  const safeHoverImage = isValidImageUrl(hoverImage) ? hoverImage : null;
 
   // --- STYLE MAPPING ---
   const styles = {
@@ -213,27 +218,49 @@ export default function ProductCard({
         )}
       >
         {/* 1. IMAGE CONTAINER */}
-        <div className="relative aspect-4/5 w-full overflow-hidden rounded-xl bg-secondary/20 group-hover:shadow-2xl transition-all duration-500 ease-out isolate">
-          
-          {/* Skeleton Loader - Pulses until image loads */}
+        <div className="relative aspect-4/5 w-full overflow-hidden rounded-xl bg-secondary/20 shadow-none group-hover:shadow-2xl transition-all duration-500 ease-out isolate">
+            
+          {/* Skeleton Loader */}
           {!imageLoaded && safeImageToRender && (
              <div className="absolute inset-0 bg-secondary animate-pulse z-0" />
           )}
 
           {safeImageToRender ? (
-            <Image 
-              src={safeImageToRender} 
-              alt={title}
-              fill
-              sizes="(max-width: 640px) 65vw, (max-width: 1024px) 33vw, 25vw"
-              priority={priority}
-              onLoad={() => setImageLoaded(true)}
-              className={cn(
-                "object-cover transition-all duration-700 ease-out will-change-transform z-10",
-                imageLoaded ? "opacity-100" : "opacity-0",
-                "group-hover:scale-105"
+            <>
+              {/* PRIMARY IMAGE */}
+              <Image 
+                src={safeImageToRender} 
+                alt={title}
+                fill
+                sizes="(max-width: 640px) 65vw, (max-width: 1024px) 33vw, 25vw"
+                priority={priority}
+                onLoad={() => setImageLoaded(true)}
+                className={cn(
+                  "object-cover transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] will-change-transform z-10",
+                  imageLoaded ? "opacity-100" : "opacity-0",
+                  // If there is a hover image, don't scale this one on hover (looks cleaner). 
+                  // If no hover image, keep the standard scale effect.
+                  safeHoverImage ? "group-hover:scale-100" : "group-hover:scale-105"
+                )}
+              />
+
+              {/* SECONDARY HOVER IMAGE */}
+              {safeHoverImage && (
+                <Image 
+                  src={safeHoverImage} 
+                  alt={`${title} alternate view`}
+                  fill
+                  sizes="(max-width: 640px) 65vw, (max-width: 1024px) 33vw, 25vw"
+                  // Lazy load this image so it doesn't hurt your initial page speed
+                  loading="lazy" 
+                  className={cn(
+                    "object-cover transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] will-change-transform z-20",
+                    // THE MAGIC: Hidden by default, appears and zooms slightly on hover
+                    "opacity-0 scale-100 group-hover:opacity-100 group-hover:scale-105"
+                  )}
+                />
               )}
-            />
+            </>
           ) : (
             // Premium Fallback State
             <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/30 bg-secondary/10 z-10 border border-border/50 border-dashed rounded-xl">

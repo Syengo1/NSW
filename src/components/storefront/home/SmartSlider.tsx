@@ -6,8 +6,22 @@ import { ChevronLeft, ChevronRight, ArrowRight, LayoutGrid } from 'lucide-react'
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
+export interface SliderProduct {
+  id: string;
+  title: string;
+  slug: string;
+  base_price: number;
+  sale_price?: number | null;
+  main_image: string;
+  hover_image?: string | null;
+  category: string;
+  status: 'active' | 'draft' | 'dropping_soon' | 'archived';
+  description?: string;
+  total_stock: number;
+}
+
 interface SmartSliderProps {
-  products: any[];
+  products: SliderProduct[];
   isInfinite?: boolean;
 }
 
@@ -62,7 +76,8 @@ export default function SmartSlider({ products, isInfinite = false }: SmartSlide
 
   return (
     <div 
-      className="relative group focus-within:ring-0 outline-none" 
+      // FIX 1: Removed 'group' from this root div so hover states don't cascade!
+      className="relative focus-within:ring-0 outline-none" 
       onKeyDown={handleKeyDown}
       tabIndex={0} 
       aria-label={`${primaryCategory} Carousel`}
@@ -110,11 +125,8 @@ export default function SmartSlider({ products, isInfinite = false }: SmartSlide
         ref={scrollRef}
         onScroll={checkScroll}
         className={cn(
-          // DENSITY FIX: gap-2 on mobile (tighter), gap-4 on desktop
-          // PADDING FIX: pb-2 (was pb-8) to remove dead space at bottom
           "flex gap-2 md:gap-4 overflow-x-auto pb-4 pt-1",
           "scrollbar-hide snap-x snap-mandatory scroll-smooth",
-          // Layout Intelligence: 
           "px-4 md:px-0",
           "md:pl-[max(1rem,calc((100vw-1280px)/2+1rem))]",
           "scroll-pl-4 md:scroll-pl-[max(1rem,calc((100vw-1280px)/2+1rem))]"
@@ -123,11 +135,8 @@ export default function SmartSlider({ products, isInfinite = false }: SmartSlide
         {products.map((product) => (
           <div 
             key={product.id} 
-            // DENSITY FIX: w-[150px] on mobile allows 2.5 cards to be seen
-            // sm:w-[180px], md:w-[220px] for larger screens
             className="flex-shrink-0 w-[150px] sm:w-[180px] md:w-[220px] snap-start transition-opacity duration-500"
           >
-            {/* Pass size='sm' on mobile to ensure fonts scale down properly */}
             <ProductCard 
               id={product.id}
               title={product.title}
@@ -135,11 +144,11 @@ export default function SmartSlider({ products, isInfinite = false }: SmartSlide
               price={product.base_price}
               salePrice={product.sale_price}
               image={product.main_image}
+              hoverImage={product.hover_image} // FIX 2: Explicitly pass the hoverImage down!
               category={product.category}
               status={product.status}
               description={product.description}
               totalStock={product.total_stock}
-              // Optional: You could pass size="sm" here if you wanted even smaller text on mobile
               size="sm" 
             />
           </div>
@@ -150,6 +159,7 @@ export default function SmartSlider({ products, isInfinite = false }: SmartSlide
           <div className="flex-shrink-0 w-[140px] sm:w-[160px] md:w-[200px] snap-start flex items-center justify-center h-full aspect-[3/4.05]">
             <Link 
               href={viewAllLink}
+              // This internal group is perfectly fine because it only controls this specific card
               className="group flex flex-col items-center justify-center gap-2 p-4 text-center border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-xl w-full h-full hover:border-black dark:hover:border-white hover:bg-neutral-50 dark:hover:bg-white/5 transition-all duration-300"
             >
               <div className="p-3 rounded-full bg-neutral-100 dark:bg-neutral-800 group-hover:scale-110 transition-transform duration-300">
@@ -176,7 +186,7 @@ export default function SmartSlider({ products, isInfinite = false }: SmartSlide
         <div className="w-2 md:w-[calc((100vw-1280px)/2+1rem)] flex-shrink-0" />
       </div>
 
-      {/* --- PROGRESS BAR (Optional: Hidden on very small screens to save space) --- */}
+      {/* --- PROGRESS BAR --- */}
       <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-neutral-100 dark:bg-neutral-800 mx-4 md:mx-[max(1rem,calc((100vw-1280px)/2+1rem))] rounded-full overflow-hidden opacity-50">
         <div 
           className="h-full bg-black dark:bg-white transition-all duration-300 ease-out"

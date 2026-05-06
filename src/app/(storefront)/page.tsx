@@ -22,13 +22,18 @@ export default async function HomePage() {
     .eq('is_visible', true);
 
   // 2. SMART PROCESSING
-  const products = rawProducts?.map(p => ({
+  const products = rawProducts?.map(p => {
+  // Sort images by their display order
+  const sortedImages = p.product_images?.sort((a, b) => a.display_order - b.display_order) || [];
+  
+  return {
     ...p,
     total_stock: p.variants.reduce((sum, v) => sum + v.stock_quantity, 0),
-    main_image: p.product_images?.sort((a, b) => a.display_order - b.display_order)[0]?.url,
-    // Calculate Discount % for sorting
+    main_image: sortedImages[0]?.url,           // First image
+    hover_image: sortedImages[1]?.url || null,  // Second image (if it exists)
     discountPct: p.sale_price ? ((p.base_price - p.sale_price) / p.base_price) : 0
-  })) || [];
+  };
+}) || [];
 
   // 3. SEGMENT DATA
   // Sort sales by highest discount first

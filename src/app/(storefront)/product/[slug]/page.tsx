@@ -3,7 +3,35 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import ProductShowcase from "@/components/storefront/ProductShowcase"; 
 
-// 1. DYNAMIC METADATA
+// --- STRICT TYPES ---
+export interface ProductImage {
+  url: string;
+  display_order: number;
+  color_tag: string | null;
+}
+
+export interface ProductVariant {
+  id: string;
+  size: string;
+  color: string;
+  stock_quantity: number;
+  price_adjustment: number;
+  sku: string;
+}
+
+export interface FullProduct {
+  id: string;
+  title: string;
+  slug: string;
+  description: string;
+  base_price: number;
+  sale_price: number | null;
+  category: string;
+  product_images: ProductImage[];
+  variants: ProductVariant[];
+}
+
+// --- DYNAMIC METADATA ---
 export async function generateMetadata({ 
   params 
 }: { 
@@ -18,18 +46,18 @@ export async function generateMetadata({
     .eq('slug', slug)
     .single();
 
-  if (!product) return { title: 'Product Not Found' };
+  if (!product) return { title: 'Product Not Found | OP Fits' };
 
   const mainImage = product.product_images?.[0]?.url || '/og-placeholder.jpg';
 
   return {
-    title: product.title,
+    title: `${product.title} | OP Fits`,
     description: product.description || 'Exclusive drop from OP Fits.',
     openGraph: { images: [mainImage] },
   };
 }
 
-// 2. MAIN PAGE
+// --- MAIN PAGE ORCHESTRATOR ---
 export default async function ProductPage({ 
   params 
 }: { 
@@ -38,34 +66,24 @@ export default async function ProductPage({
   const { slug } = await params;
   const supabase = await createClient();
 
-  // Fetch Logic: 
-  // We fetch everything needed for the client interactive logic
-  const { data: product } = await supabase
+  const { data: product, error } = await supabase
     .from('products')
     .select(`
-      id,
-      title,
-      slug, 
-      description,
-      base_price,
-      sale_price,       
-      category,
+      id, title, slug, description, base_price, sale_price, category,
       product_images ( url, display_order, color_tag ),
       variants ( id, size, color, stock_quantity, price_adjustment, sku )
     `)
     .eq('slug', slug)
     .single();
 
-  if (!product) notFound();
+  if (error || !product) notFound();
 
-  // Sort images for consistent display order
-  product.product_images.sort((a, b) => a.display_order - b.display_order);
+  // Ensure images are always sorted by display_order
+  product.product_images.sort((a: ProductImage, b: ProductImage) => a.display_order - b.display_order);
 
   return (
-    // Clean wrapper to avoid layout shifts. 
-    // The interactivity happens inside ProductShowcase.
-    <div className="bg-background min-h-screen">
-       <ProductShowcase product={product} />
+    <div className="min-h-screen bg-background text-foreground pb-24 md:pb-0">
+       <ProductShowcase product={product as FullProduct} />
     </div>
   );
 }
