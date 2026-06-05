@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     description: "Premium streetwear crafted for the bold.", //[cite: 7]
   },
   icons: {
-    icon: "/favicon.ico", //[cite: 7]
+    icon: "/icon.svg", //[cite: 7]
   },
 };
 
