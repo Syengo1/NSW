@@ -126,9 +126,10 @@ export default function FeaturedManager({ allProducts, saleProducts, categories 
                   <div className="shadow-lg shadow-red-600 flex items-center justify-center animate-pulse">
                     <Image 
                       src="/sale.svg" 
-                      alt="Sale Icon" 
-                      width={18} 
-                      height={18}
+                      alt="Sale" 
+                      width={100} // Base size
+                      height={100} 
+                      className="w-auto h-6" // Use 'w-auto' or 'h-auto' in tailwind to maintain clean proportions
                     />
                   </div>
                   <div>

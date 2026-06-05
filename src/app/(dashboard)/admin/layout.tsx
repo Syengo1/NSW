@@ -2,6 +2,21 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import { AdminMobileMenu } from "@/components/admin/AdminMobileMenu";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Command Center",
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true, // Prevents Google from keeping a cached version of the page N/B check refresh works
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+    },
+  },
+};
 
 export default async function AdminLayout({
   children,

@@ -121,26 +121,33 @@ export async function initiateSTKPush(phoneNumber: string, amount: number, order
   try {
     const token = await getAccessToken();
     
+    // --- ADD THE TILL NUMBER VARIABLE HERE ---
     const shortcode = getEnvVar("MPESA_SHORTCODE");
+    const tillNumber = getEnvVar("MPESA_TILL_NUMBER"); 
     const passkey = getEnvVar("MPESA_PASSKEY");
     const appUrl = getEnvVar("NEXT_PUBLIC_APP_URL").replace(/\/$/, "");
     const callbackSecret = getEnvVar("MPESA_CALLBACK_SECRET");
 
     // YYYYMMDDHHmmss strict formatting
     const timestamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
+    
+    // Password MUST be generated using the Store Number (shortcode), NOT the Till Number
     const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString("base64");
 
     const payload = {
-      BusinessShortCode: shortcode,
+      BusinessShortCode: shortcode, // The 7-digit Store Number
       Password: password,
       Timestamp: timestamp,
-      TransactionType: "CustomerPayBillOnline", 
+      TransactionType: "CustomerBuyGoodsOnline", 
       Amount: Math.ceil(amount),
       PartyA: formattedPhone,
-      PartyB: shortcode,
+      
+      // --- UPDATE PARTY_B TO USE THE TILL NUMBER ---
+      PartyB: tillNumber, 
+      
       PhoneNumber: formattedPhone,
       CallBackURL: `${appUrl}/api/mpesa/callback?secret=${callbackSecret}`,
-      AccountReference: "opfits", // Safaricom limit is 12 chars, keeping it short
+      AccountReference: "opfits",
       TransactionDesc: `Order ${orderId}`
     };
 

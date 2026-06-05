@@ -23,6 +23,7 @@ export default function NewDropPage() {
   // Global Orchestration State
   const [basePrice, setBasePrice] = useState<string>('');
   const [salePrice, setSalePrice] = useState<string>('');
+  const [costPrice, setCostPrice] = useState<string>(''); // NEW: Supplier Cost State
   const [category, setCategory] = useState<string>('Hoodies');
   
   const [generatedVariants, setGeneratedVariants] = useState<VariantInput[]>([]);
@@ -49,7 +50,7 @@ export default function NewDropPage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto pb-24 animate-fade-in text-foreground">
+    <div className="max-w-6xl mx-auto pb-24 animate-in fade-in duration-500 text-foreground">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div className="flex items-center gap-4">
           <Link href="/admin/products" className="p-3 bg-secondary hover:bg-muted rounded-full transition-colors border border-border">
@@ -69,6 +70,7 @@ export default function NewDropPage() {
           <BasicDetailsForm 
              basePrice={basePrice} setBasePrice={setBasePrice}
              salePrice={salePrice} setSalePrice={setSalePrice}
+             costPrice={costPrice} setCostPrice={setCostPrice} // NEW
              category={category} setCategory={setCategory}
           />
           <VariantMatrixBuilder 

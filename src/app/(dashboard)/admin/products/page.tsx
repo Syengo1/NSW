@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js"; // Switch to Master Client
+import { createClient } from "@supabase/supabase-js"; 
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { InventoryTable } from "@/components/admin/products/InventoryTable";
@@ -9,8 +9,6 @@ export default async function InventoryPage({
 }: {
   searchParams: Promise<{ q?: string; sort?: string; status?: string }>;
 }) {
-  // 1. INIT MASTER CLIENT (Bypass RLS)
-  // This ensures Admins see ALL products (Hidden, Drafts, etc.)
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -19,23 +17,20 @@ export default async function InventoryPage({
 
   const params = await searchParams;
 
-  // 2. BUILD QUERY
   let query = supabase
     .from("products")
     .select(`
-      id, title, slug, base_price, sale_price, category, status, is_visible, created_at,
+      id, title, slug, base_price, sale_price, cost_price, category, status, is_visible, created_at,
       collections ( title ),
       product_images ( url ),
       variants ( id, size, color, stock_quantity, sku )
     `);
 
-  // 3. APPLY FILTERS
   if (params.q) {
     const term = params.q;
     query = query.or(`title.ilike.%${term}%,category.ilike.%${term}%,description.ilike.%${term}%`);
   }
 
-  // Filter by Status (Active, Draft, Hidden)
   if (params.status && params.status !== 'all') {
     if (params.status === 'hidden') {
       query = query.eq('is_visible', false);
@@ -44,22 +39,21 @@ export default async function InventoryPage({
     }
   }
 
-  // 4. APPLY SORTING
-  const sortMap: Record<string, string> = {
+  // FIX 1: Strictly type the map so TypeScript knows these are valid database columns
+  const sortMap: Record<string, 'created_at' | 'base_price'> = {
     'oldest': 'created_at',
     'price_high': 'base_price',
     'price_low': 'base_price',
-    'stock_low': 'base_price', // Fallback, handled below
+    'stock_low': 'base_price', 
     'newest': 'created_at'
   };
   
-  // Custom Sort Logic
   if (params.sort === 'stock_low') {
-    // Note: Deep sorting by relation count is complex in Supabase. 
-    // For now, we sort by creation, but the UI visualizes stock health clearly.
     query = query.order('created_at', { ascending: false });
   } else {
-    query = query.order(sortMap[params.sort || 'newest'] as any, { 
+    // We can now pass the variable directly without using 'as any'
+    const sortColumn = sortMap[params.sort || 'newest'] || 'created_at';
+    query = query.order(sortColumn, { 
       ascending: params.sort === 'oldest' || params.sort === 'price_low' 
     });
   }
@@ -69,11 +63,11 @@ export default async function InventoryPage({
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
       
-      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border pb-6">
         <div>
           <h1 className="text-3xl font-black uppercase tracking-tighter text-foreground">
-            Inventory <span className="text-muted-foreground text-lg align-middle">// Command</span>
+            {/* FIX 2: Wrapped the aesthetic slashes in a string literal */}
+            Inventory <span className="text-muted-foreground text-lg align-middle">{"// Command"}</span>
           </h1>
           <p className="text-muted-foreground text-xs uppercase tracking-widest mt-1">
             {products?.length || 0} Records Found
@@ -88,10 +82,7 @@ export default async function InventoryPage({
         </Link>
       </div>
 
-      {/* TOOLBAR */}
       <ProductsToolbar />
-
-      {/* DATA TABLE */}
       <InventoryTable products={products || []} />
       
     </div>

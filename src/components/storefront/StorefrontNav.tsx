@@ -1,17 +1,18 @@
+// src/components/storefront/StorefrontNav.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-// FIX 1: Swapped 'Search' for 'Compass' (Explore Icon)
-import { Home, Compass, ShoppingBag, Shirt } from 'lucide-react';
+// NOTE: 'Wallet' icon is kept in the imports for future activation
+import { Home, Compass, ShoppingBag, Shirt, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useCartStore } from '@/lib/store/cart';
+// import { useWallet } from '@/components/providers/WalletProvider'; // FEATURE_FLAG: Web3 Icebox
 
 // --- CONFIGURATION ---
 const NAV_LINKS = [
-  // FIX 2: Updated the link to point to your new Explore/Lookbook page
   { href: '/explore', label: 'Explore', icon: Compass }, 
   { href: '/', label: 'Home', icon: Home },
   { href: '/shop', label: 'Shop', icon: Shirt },
@@ -22,27 +23,29 @@ export function StorefrontNav() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mounted, setMounted] = useState(false);
   
-  // Store Connection
+  // E-Commerce Store Connection
   const items = useCartStore((state) => state.items);
   const toggleCart = useCartStore((state) => state.toggleCart);
   const cartCount = items.reduce((acc, item) => acc + item.quantity, 0);
 
+  // FEATURE_FLAG: Web3 Wallet Connection (On Ice)
+  // const { account, connectWallet, isConnecting } = useWallet();
+
   // Logic: Transparent ONLY on Homepage AND at the very top
   const isTransparent = pathname === '/' && !isScrolled;
 
-  // FIX 3: Separated the Hydration state into its own isolated effect
+  // Fixes Next.js Hydration gaps while satisfying strict ESLint environments
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 
-  // FIX 4: Dedicated effect for scroll physics
+  // Dedicated effect for high-performance scroll monitoring
   useEffect(() => {
     const handleScroll = () => {
-      // Threshold 10px to switch immediately when user starts scrolling
       setIsScrolled(window.scrollY > 10);
     };
 
-    // Run once on mount to check initial position
     handleScroll();
 
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -60,10 +63,7 @@ export function StorefrontNav() {
       <header 
         className={cn(
           "fixed top-0 left-0 right-0 z-[50] transition-all duration-300 ease-in-out",
-          // Height: Taller on transparent hero (premium feel), compact when scrolled
           isScrolled ? "h-16" : "h-20",
-          
-          // Style: Glass when scrolled, Invisible when at top
           isTransparent 
             ? "bg-transparent border-transparent" 
             : "bg-background/80 backdrop-blur-md border-b border-border shadow-sm"
@@ -79,7 +79,8 @@ export function StorefrontNav() {
               isTransparent ? "text-white drop-shadow-md" : "text-foreground"
             )}
           >
-            <span className={cn("transition-colors", isTransparent ? "text-white/70" : "text-muted-foreground")}>OP</span>FITS
+            <span className={cn("transition-colors", isTransparent ? "text-white/70" : "text-muted-foreground")}>OP</span>
+            <span className="text-2xl">FITS</span>
           </Link>
           
           {/* DESKTOP LINKS */}
@@ -100,8 +101,26 @@ export function StorefrontNav() {
             ))}
           </nav>
 
-          {/* ACTIONS (Theme + Cart) */}
+          {/* ACTIONS HUB */}
           <div className="flex items-center gap-4">
+             
+             {/* FEATURE_FLAG: WEB3 WALLET CONNECTION BUTTON (ON ICE)
+             <button 
+                onClick={connectWallet}
+                disabled={isConnecting}
+                className={cn(
+                  "hidden md:flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest px-4 py-2 border rounded-full transition-all active:scale-95",
+                  isTransparent 
+                    ? "border-white/30 text-white hover:bg-white/10" 
+                    : "border-border text-foreground hover:bg-secondary",
+                  isConnecting && "opacity-50 cursor-not-allowed"
+                )}
+             >
+                <Wallet size={14} />
+                {account ? `${account.substring(0, 6)}...${account.substring(account.length - 4)}` : 'Connect'}
+             </button>
+             */}
+
              <ThemeToggle />
              
              <button 
@@ -130,7 +149,7 @@ export function StorefrontNav() {
         className={cn(
           "md:hidden fixed bottom-0 left-0 right-0 z-[50]",
           "bg-background/95 backdrop-blur-xl border-t border-border",
-          "pb-[env(safe-area-inset-bottom)]", // iOS Home Bar
+          "pb-[env(safe-area-inset-bottom)]", 
           "shadow-[0_-5px_10px_rgba(0,0,0,0.05)]"
         )}
       >
@@ -160,6 +179,7 @@ export function StorefrontNav() {
             )
           })}
           
+          {/* Mobile Cart Trigger */}
           <button 
              onClick={toggleCart}
              className="flex flex-col items-center justify-center w-full h-full text-muted-foreground active:scale-90 transition-transform border-l border-border/10 ml-1"
@@ -177,5 +197,5 @@ export function StorefrontNav() {
         </div>
       </nav>
     </>
-  )
+  );
 }

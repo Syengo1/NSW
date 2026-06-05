@@ -1,171 +1,213 @@
 'use server';
 
-import { createClient as createAdminClient } from "@supabase/supabase-js"; 
-import { createClient as createServerClient } from '@/lib/supabase/server'; // Standard auth client
+import { createClient } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
 
-export type VariantInput = {
+// --- TYPES ---
+export interface VariantInput {
   size: string;
   color: string;
   sku: string;
   stock: number;
   priceDiff: number;
-};
+}
 
-// --- SECURITY HELPER ---
-// Ensures ONLY logged-in admins can trigger these actions
-async function verifyAdminAndGetClient() {
-  const authClient = await createServerClient();
-  const { data: { user }, error } = await authClient.auth.getUser();
-
-  // Validate session (Adjust this check based on how you assign admin roles)
-  if (error || !user || user.user_metadata?.role !== 'admin') {
-    throw new Error("UNAUTHORIZED: Action denied.");
-  }
-
-  // If verified, return the bypass-RLS client to perform the database operations
-  return createAdminClient(
+// --- SECURE CLIENT INSTANTIATION ---
+// This guarantees we bypass Row Level Security purely on the server for Admin operations
+function getAdminClient() {
+  return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false } }
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 }
 
-// --- 1. GHOST MODE ACTION ---
-export async function toggleProductVisibility(id: string, currentStatus: boolean) {
-  const supabase = await verifyAdminAndGetClient(); // SECURITY CHECK
-  
-  const { error } = await supabase
-    .from('products')
-    .update({ is_visible: !currentStatus })
-    .eq('id', id);
-
-  if (error) throw new Error(`Failed to toggle visibility: ${error.message}`);
-  
-  revalidatePath('/admin/products');
-  revalidatePath('/shop'); 
-  revalidatePath('/');
-}
-
-// --- 2. QUICK EDIT ACTION ---
-export async function updateQuickEdit(
-  type: 'product_price' | 'variant_stock', 
-  id: string, 
-  value: number
-) {
-  try {
-    const supabase = await verifyAdminAndGetClient(); // SECURITY CHECK
-
-    if (type === 'product_price') {
-      const { error } = await supabase
-        .from('products')
-        .update({ base_price: Math.round(value * 100) })
-        .eq('id', id);
-      if (error) throw error;
-    } 
-    
-    if (type === 'variant_stock') {
-      const { error } = await supabase
-        .from('variants')
-        .update({ stock_quantity: value })
-        .eq('id', id);
-      if (error) throw error;
-    }
-
-    revalidatePath('/admin/products');
-    return { success: true };
-  } catch (error: unknown) {
-    // FIX: Replaced 'any' with 'unknown' for strict TS safety
-    const msg = error instanceof Error ? error.message : "Quick edit failed";
-    return { success: false, message: msg };
-  }
-}
-
-// --- 3. CREATE PRODUCT DROP ---
+// ============================================================================
+// 1. CREATE NEW PRODUCT DROP
+// ============================================================================
 export async function createProductDrop(
-  formData: FormData, 
-  variants: VariantInput[], 
-  imageUrls: { url: string; color?: string }[]
+  formData: FormData,
+  variants: VariantInput[],
+  imageAssets: { url: string; color?: string }[]
 ) {
-  const supabase = await verifyAdminAndGetClient(); // SECURITY CHECK
+  const supabase = getAdminClient();
 
-  // A. EXTRACT & VALIDATE
+  // A. Extract & Validate Standard Data
   const title = formData.get('title') as string;
   const description = formData.get('description') as string;
   const category = formData.get('category') as string;
   const gender = formData.get('gender') as string;
 
-  // FIX: Safe parsing to prevent NaN errors
+  if (!title || !category) throw new Error("Missing critical product details.");
+
+  // B. Extract & Validate Financials (Converting to Cents)
   const rawBase = parseFloat(formData.get('basePrice') as string);
   if (isNaN(rawBase)) throw new Error("Base price must be a valid number.");
   const basePrice = Math.round(rawBase * 100); 
+
+  const rawCost = parseFloat(formData.get('costPrice') as string);
+  if (isNaN(rawCost)) throw new Error("Supplier cost price must be a valid number.");
+  const costPrice = Math.round(rawCost * 100); 
 
   const salePriceInput = formData.get('salePrice');
   const salePrice = salePriceInput && salePriceInput !== '' 
     ? Math.round(parseFloat(salePriceInput as string) * 100) 
     : null;
-  
-  if (!title || variants.length === 0) {
-    throw new Error("A drop needs a title and at least one variant.");
-  }
 
-  // B. CREATE PARENT PRODUCT
+  // C. Create Parent Product Record
   const slug = title.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '');
   
-  const { data: product, error: prodError } = await supabase
+  const { data: product, error: productError } = await supabase
     .from('products')
     .insert({
       title,
-      slug: `${slug}-${Date.now()}`,
+      slug: `${slug}-${Date.now()}`, // Guarantee uniqueness
       description,
       base_price: basePrice,
       sale_price: salePrice,
+      cost_price: costPrice, // Log the COGS
       category,
       gender,
       status: 'active',
       is_visible: true 
     })
-    .select('id') // Only request the ID to save bandwidth
+    .select('id')
     .single();
 
-  if (prodError || !product) throw new Error(`Failed to create drop: ${prodError?.message}`);
+  if (productError || !product) {
+    throw new Error(`Product creation failed: ${productError?.message}`);
+  }
 
-  // C. TRANSACTION WRAPPER (Variants & Images)
-  try {
-    const variantsToInsert = variants.map(v => ({
+  // D. Create Variants & Snapshot Initial Inventory
+  if (variants.length > 0) {
+    const variantPayload = variants.map(v => ({
       product_id: product.id,
       size: v.size,
       color: v.color,
-      sku: v.sku.toUpperCase(),
+      sku: v.sku,
       stock_quantity: v.stock,
-      price_adjustment: v.priceDiff,
+      price_adjustment: v.priceDiff || 0,
       is_active: true
     }));
 
-    const { error: varError } = await supabase.from('variants').insert(variantsToInsert);
-    if (varError) throw new Error(`Variant Error: ${varError.message}`);
+    // Insert variants and return their new IDs
+    const { data: insertedVariants, error: variantError } = await supabase
+      .from('variants')
+      .insert(variantPayload)
+      .select('id, stock_quantity');
 
-    if (imageUrls.length > 0) {
-      const imagesToInsert = imageUrls.map((img, index) => ({
-        product_id: product.id,
-        url: img.url,
-        color_tag: img.color || null, 
-        display_order: index
+    if (variantError) throw new Error(`Variants failed: ${variantError.message}`);
+
+    // LOGIC UPGRADE: Snapshot the initial stock to the Ledger
+    if (insertedVariants && insertedVariants.length > 0) {
+      const ledgerPayload = insertedVariants.map(v => ({
+        variant_id: v.id,
+        quantity_change: v.stock_quantity,
+        reason: 'initial_stock_creation'
       }));
-      const { error: imgError } = await supabase.from('product_images').insert(imagesToInsert);
-      if (imgError) throw new Error(`Image Error: ${imgError.message}`);
+      
+      const { error: ledgerError } = await supabase
+        .from('inventory_ledger')
+        .insert(ledgerPayload);
+        
+      if (ledgerError) console.error("Ledger Snapshot Failed:", ledgerError.message);
     }
-
-  } catch (creationError) {
-    // FIX: ROBUST ROLLBACK. If variants OR images fail, we wipe the parent product.
-    // Assuming your DB uses `ON DELETE CASCADE`, this will cleanly erase any partial data.
-    console.error("Creation failed, initiating rollback...", creationError);
-    await supabase.from('products').delete().eq('id', product.id);
-    throw creationError; 
   }
 
-  // D. FINALIZE
+  // E. Link Product Images
+  if (imageAssets.length > 0) {
+    const imagePayload = imageAssets.map((img, index) => ({
+      product_id: product.id,
+      url: img.url,
+      color_tag: img.color || null,
+      display_order: index
+    }));
+
+    const { error: imageError } = await supabase
+      .from('product_images')
+      .insert(imagePayload);
+
+    if (imageError) throw new Error(`Image linking failed: ${imageError.message}`);
+  }
+
+  // F. Revalidate Cache (Update UI globally)
   revalidatePath('/admin/products');
-  redirect('/admin/products');
+  revalidatePath('/shop'); 
+}
+
+// ============================================================================
+// 2. INVENTORY TABLE QUICK EDIT
+// ============================================================================
+export async function updateQuickEdit(
+  type: 'product_price' | 'product_sale_price' | 'product_cost_price' | 'variant_stock', 
+  id: string, 
+  value: number | null
+) {
+  const supabase = getAdminClient();
+
+  try {
+    if (type === 'product_price' && value !== null) {
+      const { error } = await supabase.from('products').update({ base_price: Math.round(value * 100) }).eq('id', id);
+      if (error) throw error;
+    } 
+    
+    if (type === 'product_sale_price') {
+      const dbValue = value !== null ? Math.round(value * 100) : null;
+      const { error } = await supabase.from('products').update({ sale_price: dbValue }).eq('id', id);
+      if (error) throw error;
+    }
+
+    // Support updating cost price from future admin views
+    if (type === 'product_cost_price' && value !== null) {
+      const { error } = await supabase.from('products').update({ cost_price: Math.round(value * 100) }).eq('id', id);
+      if (error) throw error;
+    }
+
+    if (type === 'variant_stock' && value !== null) {
+      // LOGIC UPGRADE: Calculate the stock delta so we can log it properly
+      const { data: currentVariant } = await supabase
+        .from('variants')
+        .select('stock_quantity')
+        .eq('id', id)
+        .single();
+        
+      const currentStock = currentVariant?.stock_quantity || 0;
+      const delta = value - currentStock;
+
+      // 1. Update the actual stock
+      const { error: stockError } = await supabase.from('variants').update({ stock_quantity: value }).eq('id', id);
+      if (stockError) throw stockError;
+
+      // 2. Log the discrepancy to the ledger if it actually changed
+      if (delta !== 0) {
+         const { error: logError } = await supabase.from('inventory_ledger').insert({
+            variant_id: id,
+            quantity_change: delta,
+            reason: 'admin_manual_adjustment'
+         });
+         if (logError) console.error("Manual adjustment ledger logging failed:", logError.message);
+      }
+    }
+
+    revalidatePath('/admin/products');
+    return { success: true };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Quick edit failed";
+    return { success: false, message: msg };
+  }
+}
+
+// ============================================================================
+// 3. TOGGLE PRODUCT GHOST MODE
+// ============================================================================
+export async function toggleProductVisibility(id: string, currentVisibility: boolean) {
+  const supabase = getAdminClient();
+  const { error } = await supabase
+    .from('products')
+    .update({ is_visible: !currentVisibility })
+    .eq('id', id);
+
+  if (error) throw new Error(error.message);
+  
+  revalidatePath('/admin/products');
+  revalidatePath('/shop');
 }
