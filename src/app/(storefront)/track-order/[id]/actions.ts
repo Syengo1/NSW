@@ -1,10 +1,11 @@
+// src/app/(storefront)/track-order/[id]/actions.ts
 'use server';
 
 import { createClient } from "@supabase/supabase-js"; 
 import { initiateSTKPush } from '@/lib/services/mpesa';
 import { revalidatePath } from 'next/cache';
 
-export async function retryPayment(orderNumber: string) {
+export async function retryPayment(orderId: string) {
   // 1. INIT ADMIN CLIENT (Bypass RLS)
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,42 +13,50 @@ export async function retryPayment(orderNumber: string) {
     { auth: { persistSession: false } }
   );
 
-  // 2. FETCH ORDER
-  const { data: order } = await supabase
-    .from('orders')
-    .select('id, status, customer_phone, total_amount')
-    .eq('order_number', orderNumber)
-    .single();
-
-  if (!order) {
-    return { success: false, error: "Order not found." };
-  }
-
-  // 3. SAFETY CHECK: Prevent double payment
-  if (order.status === 'paid' || order.status === 'shipped') {
-    return { success: false, error: "Order is already paid!" };
-  }
-
   try {
+    // 2. FETCH ORDER
+    // FIX: Query by 'id', since the frontend passes the UUID to this action
+    const { data: order, error: fetchError } = await supabase
+      .from('orders')
+      .select('id, order_number, status, customer_phone, total_amount')
+      .eq('id', orderId)
+      .single();
+
+    if (fetchError || !order) {
+      console.error("[Retry Payment] Order fetch failed:", fetchError);
+      return { success: false, error: "Order not found." };
+    }
+
+    // 3. SAFETY CHECK: Prevent double payment
+    if (['paid', 'shipped', 'delivered'].includes(order.status)) {
+      return { success: false, error: "Order is already paid!" };
+    }
+
     // 4. TRIGGER M-PESA
     const res = await initiateSTKPush(order.customer_phone, order.total_amount / 100, order.id);
     
     // 5. UPDATE ORDER STATE
-    const { error } = await supabase
+    const { error: updateError } = await supabase
       .from('orders')
       .update({ 
         mpesa_request_id: res.checkoutRequestId, 
-        status: 'processing' // Reset status to processing so UI shows spinner
+        status: 'processing' // Reset status to processing so UI updates
       })
       .eq('id', order.id);
 
-    if (error) throw new Error("Database update failed");
+    if (updateError) {
+      console.error("[Retry Payment] Order update failed:", updateError);
+      throw new Error("Failed to update order status.");
+    }
 
-    revalidatePath(`/track-order/${orderNumber}`);
+    // Revalidate the page so the user sees the new polling state
+    revalidatePath(`/track-order/${order.order_number}`);
+
     return { success: true };
 
-  } catch (e: any) {
-    console.error("Retry Payment Error:", e);
-    return { success: false, error: e.message || "Failed to initiate M-Pesa." };
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Payment initiation failed.";
+    console.error("[Retry Payment Critical Error]:", error);
+    return { success: false, error: errorMessage };
   }
 }

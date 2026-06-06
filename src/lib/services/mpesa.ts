@@ -1,5 +1,7 @@
+import { Buffer } from 'buffer';
+
 // --- CONFIGURATION & TYPES ---
-const MPESA_ENV = process.env.MPESA_ENV || 'sandbox';
+const MPESA_ENV = process.env.MPESA_ENV || 'production';
 
 const BASE_URL = MPESA_ENV === 'production' 
   ? "https://api.safaricom.co.ke" 
@@ -18,11 +20,6 @@ interface MpesaErrorResponse {
   ResponseDescription?: string;
 }
 
-// --- MODULE STATE (Serverless In-Memory Cache) ---
-// This bypasses Next.js aggressive caching but persists across hot-reloads and warm lambdas
-let cachedToken: string | null = null;
-let tokenExpiryTime: number | null = null;
-
 // --- UTILITIES ---
 
 function getEnvVar(key: string): string {
@@ -33,9 +30,10 @@ function getEnvVar(key: string): string {
 
 /**
  * Fetch wrapper that strictly enforces a timeout to prevent hanging checkouts
+ * Only used for the STK Push, NOT the token generation.
  */
 async function fetchWithTimeout(resource: string, options: RequestInit & { timeout?: number } = {}) {
-  const { timeout = 9000 } = options; // 15 Second strict timeout
+  const { timeout = 15000 } = options; // 15 Second strict timeout for STK push
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
 
@@ -75,21 +73,15 @@ function formatAndValidatePhone(phone: string): string {
 // --- CORE SERVICES ---
 
 export async function getAccessToken(): Promise<string> {
-  // 1. Return cached token if it exists and is still valid (Buffer of 5 minutes)
-  const now = Date.now();
-  if (cachedToken && tokenExpiryTime && now < tokenExpiryTime - 300000) {
-    return cachedToken;
-  }
-
   const consumerKey = getEnvVar("MPESA_CONSUMER_KEY");
   const consumerSecret = getEnvVar("MPESA_CONSUMER_SECRET");
   const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
 
   try {
-    const res = await fetchWithTimeout(`${BASE_URL}/oauth/v1/generate?grant_type=client_credentials`, {
+    const res = await fetch(`${BASE_URL}/oauth/v1/generate?grant_type=client_credentials`, {
+      method: 'GET',
       headers: { Authorization: `Basic ${auth}` },
-      cache: 'no-store', // Crucial: Never let Next.js cache this network request
-      timeout: 10000 // 10 seconds timeout for auth
+      next: { revalidate: 3500 } 
     });
 
     if (!res.ok) {
@@ -98,12 +90,8 @@ export async function getAccessToken(): Promise<string> {
     }
 
     const data: MpesaTokenResponse = await res.json();
-    
-    // 2. Update In-Memory Cache (Expires in exactly what Safaricom dictates, usually 3599s)
-    cachedToken = data.access_token;
-    tokenExpiryTime = now + (parseInt(data.expires_in) * 1000);
+    return data.access_token;
 
-    return cachedToken;
   } catch (error) {
     console.error("[MPESA_AUTH_ERROR]", error);
     throw new Error("Payment Gateway is currently unreachable. Please try again in a moment.");
@@ -111,7 +99,7 @@ export async function getAccessToken(): Promise<string> {
 }
 
 export async function initiateSTKPush(phoneNumber: string, amount: number, orderId: string) {
-  // 1. Strict Input Validation
+  // Strict Input Validation
   if (amount <= 0 || !Number.isInteger(amount)) {
     throw new Error("Invalid payment amount. Must be a positive integer.");
   }
@@ -121,9 +109,9 @@ export async function initiateSTKPush(phoneNumber: string, amount: number, order
   try {
     const token = await getAccessToken();
     
-    // --- ADD THE TILL NUMBER VARIABLE HERE ---
-    const shortcode = getEnvVar("MPESA_SHORTCODE");
-    const tillNumber = getEnvVar("MPESA_TILL_NUMBER"); 
+    // Till & Store Configurations
+    const shortcode = getEnvVar("MPESA_SHORTCODE");     // Store Number
+    const tillNumber = getEnvVar("MPESA_TILL_NUMBER");  // Till Number
     const passkey = getEnvVar("MPESA_PASSKEY");
     const appUrl = getEnvVar("NEXT_PUBLIC_APP_URL").replace(/\/$/, "");
     const callbackSecret = getEnvVar("MPESA_CALLBACK_SECRET");
@@ -135,19 +123,18 @@ export async function initiateSTKPush(phoneNumber: string, amount: number, order
     const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString("base64");
 
     const payload = {
-      BusinessShortCode: shortcode, // The 7-digit Store Number
+      BusinessShortCode: shortcode, // The Store Number
       Password: password,
       Timestamp: timestamp,
       TransactionType: "CustomerBuyGoodsOnline", 
       Amount: Math.ceil(amount),
       PartyA: formattedPhone,
       
-      // --- UPDATE PARTY_B TO USE THE TILL NUMBER ---
-      PartyB: tillNumber, 
+      PartyB: tillNumber, // The Till Number
       
       PhoneNumber: formattedPhone,
       CallBackURL: `${appUrl}/api/mpesa/callback?secret=${callbackSecret}`,
-      AccountReference: "opfits",
+      AccountReference: "Nairobi Streetwear",
       TransactionDesc: `Order ${orderId}`
     };
 
@@ -158,7 +145,8 @@ export async function initiateSTKPush(phoneNumber: string, amount: number, order
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
-      timeout: 15000 // Give the STK prompt 15 seconds to initiate
+      cache: 'no-store', // STK Pushes must NEVER be cached
+      timeout: 15000 // 15 seconds to abort if Safaricom hangs
     });
 
     const data = await res.json();
@@ -177,7 +165,7 @@ export async function initiateSTKPush(phoneNumber: string, amount: number, order
     };
 
   } catch (error: unknown) {
-    // 2. Safe Error Propagation
+    // Safe Error Propagation
     const isError = error instanceof Error;
     console.error("[STK_PUSH_CRITICAL]", isError ? error.message : error);
     

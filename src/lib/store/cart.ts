@@ -15,6 +15,14 @@ export type CartItem = {
   maxStock: number;
 };
 
+// NEW: Strict type for incoming fresh data from your database
+export type SyncCartItem = {
+  variantId: string;
+  price: number;
+  maxStock: number;
+  originalPrice?: number;
+};
+
 type CartState = {
   items: CartItem[];
   isOpen: boolean;
@@ -28,6 +36,8 @@ type CartState = {
   clearCart: () => void;
   getCartTotal: () => number;
   getTotalItems: () => number;
+  // NEW: Action to sync local cart with fresh server data
+  syncCart: (freshData: SyncCartItem[]) => void;
 };
 
 export const useCartStore = create<CartState>()(
@@ -45,7 +55,6 @@ export const useCartStore = create<CartState>()(
         const items = get().items;
         const existingItem = items.find((i) => i.variantId === newItem.variantId);
         
-        // Update timestamp to trigger "Wiggle" animation in Navbar
         const timestamp = Date.now();
 
         if (existingItem) {
@@ -105,14 +114,42 @@ export const useCartStore = create<CartState>()(
       getTotalItems: () => {
         return get().items.reduce((total, item) => total + item.quantity, 0);
       },
+
+      // NEW: Implementation of syncCart to prevent stale data
+      syncCart: (freshData) => {
+        set((state) => {
+          const updatedItems = state.items.map((item) => {
+            const fresh = freshData.find((f) => f.variantId === item.variantId);
+            if (fresh) {
+              return {
+                ...item,
+                price: fresh.price,
+                maxStock: fresh.maxStock,
+                originalPrice: fresh.originalPrice ?? item.originalPrice,
+                // Clamp quantity so users can't buy more than what is newly available
+                quantity: Math.min(item.quantity, fresh.maxStock),
+              };
+            }
+            return item;
+          });
+
+          // Automatically remove items that just went out of stock (maxStock === 0)
+          const validItems = updatedItems.filter((item) => item.maxStock > 0);
+
+          return { items: validItems, lastAction: Date.now() };
+        });
+      },
     }),
     {
       name: 'nairobi-streetwear-cart',
       storage: createJSONStorage(() => localStorage),
       version: 2,
-      migrate: (persistedState: any, version: number) => {
+      // FIX: Replaced 'any' with 'unknown' to satisfy ESLint
+      migrate: (persistedState: unknown, version: number) => {
         if (version < 2) {
-          return { ...persistedState, items: persistedState.items || [] } as CartState;
+          // Safely cast unknown to expected shape before migrating
+          const state = persistedState as { items?: CartItem[] } | null;
+          return { ...state, items: state?.items || [] } as CartState;
         }
         return persistedState as CartState;
       },

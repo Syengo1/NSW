@@ -1,25 +1,88 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import Image from 'next/image'; // FIX: Upgraded to Next.js Image Component
+import Image from 'next/image';
 import { useCartStore } from '@/lib/store/cart';
 import { X, Plus, Minus, Trash2, ArrowRight, ShoppingBag, Truck, AlertCircle, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/client';
+
+// FIX 1: Strict Typing for Supabase Relational Payload
+interface SupabaseVariantResponse {
+  id: string;
+  stock_quantity: number | null;
+  price_adjustment: number | null;
+  products: 
+    | { base_price: number; sale_price: number | null }
+    | { base_price: number; sale_price: number | null }[]
+    | null;
+}
+
+const emptySubscribe = () => () => {};
 
 export default function CartDrawer() {
-  const { items, isOpen, closeCart, updateQuantity, removeItem, getCartTotal } = useCartStore();
+  const { items, isOpen, closeCart, updateQuantity, removeItem, getCartTotal, syncCart } = useCartStore();
   
-  // FIX 1: Proper mounting logic to prevent hydration mismatches
-  const [mounted, setMounted] = useState(false);
+  const isMounted = useSyncExternalStore(
+    emptySubscribe, 
+    () => true,
+    () => false
+  );
 
-  // Run once on mount to tell Next.js it is safe to render the portal
+  // FIX 2: Derive a stable string of IDs to safely use as a useEffect dependency
+  // This prevents infinite loops while satisfying ESLint rules.
+  const variantIdsStr = useMemo(() => {
+    return items.map((i) => i.variantId).sort().join(',');
+  }, [items]);
+
+  // --- ROBUST UPGRADE: REAL-TIME CART SYNC ---
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    let isSubscribed = true;
 
-  // Separate effect specifically for handling the body scroll lock
+    const syncLiveData = async () => {
+      if (!isOpen || !variantIdsStr || !syncCart) return;
+
+      const variantIds = variantIdsStr.split(',');
+      const supabase = createClient();
+
+      const { data, error } = await supabase
+        .from('variants')
+        .select(`
+          id,
+          stock_quantity,
+          price_adjustment,
+          products ( base_price, sale_price )
+        `)
+        .in('id', variantIds);
+
+      if (data && !error && isSubscribed) {
+        // Cast the data using our strict Interface to eliminate 'any'
+        const freshData = (data as SupabaseVariantResponse[]).map((variant) => {
+          const product = Array.isArray(variant.products) ? variant.products[0] : variant.products;
+          const basePrice = product?.sale_price || product?.base_price || 0;
+
+          return {
+            variantId: variant.id,
+            price: basePrice + (variant.price_adjustment || 0),
+            originalPrice: product?.sale_price ? (product?.base_price || 0) + (variant.price_adjustment || 0) : undefined,
+            maxStock: variant.stock_quantity || 0,
+          };
+        });
+
+        syncCart(freshData);
+      }
+    };
+
+    syncLiveData();
+
+    return () => {
+      isSubscribed = false; 
+    };
+  }, [isOpen, syncCart, variantIdsStr]); // ESLint is now perfectly satisfied
+
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -27,7 +90,6 @@ export default function CartDrawer() {
       document.body.style.overflow = 'unset';
     }
     
-    // Cleanup function to ensure scroll is restored if unmounted while open
     return () => { 
       document.body.style.overflow = 'unset'; 
     };
@@ -37,7 +99,6 @@ export default function CartDrawer() {
   const { totalCents, totalSavingsCents } = useMemo(() => {
     const total = getCartTotal();
     const savings = items.reduce((acc, item) => {
-      // Ensure originalPrice exists and is actually a discount
       if (item.originalPrice && item.originalPrice > item.price) {
         return acc + ((item.originalPrice - item.price) * item.quantity);
       }
@@ -50,8 +111,7 @@ export default function CartDrawer() {
   const progress = Math.min((totalCents / shippingThresholdCents) * 100, 100);
   const remaining = shippingThresholdCents - totalCents;
 
-  // Prevent rendering on the server (hydration safety)
-  if (!mounted) return null;
+  if (!isMounted) return null;
 
   const DrawerContent = (
     <div 
@@ -60,7 +120,6 @@ export default function CartDrawer() {
         isOpen ? "pointer-events-auto" : "pointer-events-none"
       )}
     >
-      {/* Dimmed Background Overlay */}
       <div 
         className={cn(
           "fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-500 ease-in-out",
@@ -69,7 +128,6 @@ export default function CartDrawer() {
         onClick={closeCart}
       />
 
-      {/* Drawer Panel */}
       <div 
         className={cn(
           "relative w-full max-w-[420px] h-full bg-background border-l border-border/50 shadow-[0_0_40px_rgba(0,0,0,0.3)] transform transition-transform duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] flex flex-col",
@@ -96,7 +154,6 @@ export default function CartDrawer() {
 
         {/* SMART SHIPPING BAR */}
         <div className="px-6 py-4 bg-secondary/20 border-b border-border/50 relative overflow-hidden">
-          {/* Subtle glow behind the bar if full */}
           {progress === 100 && <div className="absolute inset-0 bg-emerald-500/5 animate-pulse" />}
           
           <div className="flex items-center gap-2 mb-3 text-[10px] font-bold uppercase tracking-widest relative z-10">
@@ -120,7 +177,6 @@ export default function CartDrawer() {
                )}
                style={{ width: `${progress}%` }}
              >
-                {/* Shine effect on the progress bar */}
                 <div className="absolute top-0 bottom-0 left-0 w-full bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
              </div>
           </div>
@@ -156,9 +212,8 @@ export default function CartDrawer() {
                 <div 
                   key={item.variantId} 
                   className="flex gap-4 group animate-in slide-in-from-right-8 fade-in duration-500 fill-mode-both"
-                  style={{ animationDelay: `${index * 50}ms` }} // Staggered entrance
+                  style={{ animationDelay: `${index * 50}ms` }}
                 >
-                  {/* FIX 2: Upgraded Image to Next.js <Image> component */}
                   <div className="relative h-28 w-24 bg-secondary overflow-hidden shrink-0 rounded-md border border-border/50">
                     {item.image ? (
                        <Image 
@@ -281,7 +336,7 @@ export default function CartDrawer() {
             >
               <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-in-out skew-x-12" />
               <span className="relative z-10 flex items-center gap-2">
-                Secure Checkout <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                Checkout <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
               </span>
             </Link>
           </div>
