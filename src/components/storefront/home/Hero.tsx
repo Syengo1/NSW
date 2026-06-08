@@ -14,7 +14,6 @@ interface NetworkInformation extends EventTarget {
 
 // --- CONFIG: DATA SOURCES ---
 const PLAYLIST = [
-  /*
   {
     id: 1,
     type: 'video',
@@ -22,7 +21,6 @@ const PLAYLIST = [
     poster: '/poster.webp',
     duration: 0, 
   },
-  */
   {
     id: 2,
     type: 'image',
