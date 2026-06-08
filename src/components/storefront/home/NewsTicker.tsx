@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Terminal, Minimize2, Maximize2, Radio, Activity, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { X, Terminal, Minimize2, Radio, Activity, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // --- CONFIGURATION ---
@@ -16,12 +16,36 @@ const TYPING_SPEED = 20; // ms per char
 const DELETING_SPEED = 10; // ms per char
 const PAUSE_TIME = 1200; // time to wait before deleting
 
+// 🚨 SMART ENGINE: Generates a unique hash from the current messages.
+const getTickerHash = () => {
+  const str = MESSAGES.join('|');
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return `opfits_ticker_v${Math.abs(hash)}`;
+};
+
+// Required for hydration-safe mounting without useEffect
+const emptySubscribe = () => () => {};
+
 export default function NewsTicker() {
-  const [isVisible, setIsVisible] = useState(true);
+  // 1. Safe Hydration (Replaces useEffect + setMounted)
+  // This elegantly eliminates the ESLint "setState in effect" warning
+  const isMounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
+
+  // 2. Local UI States
+  const [isManuallyClosed, setIsManuallyClosed] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   
-  // Typewriter State
+  // 3. Typewriter State
   const [text, setText] = useState('');
   const [messageIndex, setMessageIndex] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -29,9 +53,27 @@ export default function NewsTicker() {
   // Refs for timing control
   const timer = useRef<NodeJS.Timeout | null>(null);
 
+  // --- 🧠 INTELLIGENT VISIBILITY LOGIC ---
+  const currentHash = getTickerHash();
+  
+  // We calculate visibility synchronously during render ONLY AFTER hydration finishes.
+  // This completely removes the need for useEffect state cascades.
+  const isVisible = 
+    isMounted && 
+    !isManuallyClosed && 
+    typeof window !== 'undefined' && 
+    window.localStorage.getItem('opfits_ticker_dismissed_hash') !== currentHash;
+
+  const handleDismiss = () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('opfits_ticker_dismissed_hash', currentHash);
+    }
+    setIsManuallyClosed(true);
+  };
+
   // --- THE INTELLIGENT TYPEWRITER ENGINE ---
   useEffect(() => {
-    if (isMinimized || !isVisible || isHovered) return;
+    if (!isMounted || isMinimized || !isVisible || isHovered) return;
 
     const handleTyping = () => {
       const currentMessage = MESSAGES[messageIndex];
@@ -61,9 +103,10 @@ export default function NewsTicker() {
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [text, isDeleting, messageIndex, isMinimized, isVisible, isHovered]);
+  }, [text, isDeleting, messageIndex, isMinimized, isVisible, isHovered, isMounted]);
 
-  if (!isVisible) return null;
+  // Prevent hydration mismatches by returning null until the client mounts
+  if (!isMounted || !isVisible) return null;
 
   return (
     <div 
@@ -122,7 +165,7 @@ export default function NewsTicker() {
              
              {/* HOVER TOOLTIP */}
              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 text-[9px] text-emerald-300 font-bold uppercase tracking-widest backdrop-blur-sm">
-               // PAUSED_FOR_READING //
+               {"// PAUSED_FOR_READING //"}
              </div>
           </div>
         )}
@@ -149,7 +192,7 @@ export default function NewsTicker() {
           {/* Close */}
           {!isMinimized && (
             <button 
-              onClick={() => setIsVisible(false)}
+              onClick={handleDismiss}
               className="p-1.5 hover:bg-red-500/10 text-emerald-600/70 hover:text-red-500 rounded-sm transition-all duration-300 active:scale-95"
               title="Close Connection"
             >

@@ -1,36 +1,74 @@
 import type { NextConfig } from "next";
+import withPWA from "@ducanh2912/next-pwa";
 
 const nextConfig: NextConfig = {
   images: {
-    // 1. PERFORMANCE: Enable AVIF for world-class image compression (20% smaller than WebP)
     formats: ['image/avif', 'image/webp'],
-    
-    // 2. SECURITY: Strictly whitelist only your exact CDNs and buckets
     remotePatterns: [
       {
         protocol: 'https',
-        // Your specific Supabase instance (pulled from your Lighthouse audit)
-        hostname: 'wqrtjgfrjuadksaotbxj.supabase.co', 
+        hostname: 'wqrtjgfrjuadksaotbxj.supabase.co',
         port: '',
-        // Restricts access to ONLY the public storage bucket
         pathname: '/storage/v1/object/public/**',
       },
       {
         protocol: 'https',
-        // Your Vercel Blob Storage (where your hero video and assets live)
         hostname: 'ewxf0eupwexd82yb.public.blob.vercel-storage.com',
         port: '',
       }
     ],
   },
   
-  // 3. PRODUCTION CLEANUP: Automatically strip console.log() in production
-  // This reduces bundle size and hides debugging info from users inspecting your site.
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' 
-      ? { exclude: ['error', 'warn'] } // Keeps errors/warnings, but removes standard logs
+      ? { exclude: ['error', 'warn'] } 
       : false,
   },
-};
 
-export default nextConfig;
+  turbopack: {},
+  
+  async headers() {
+    return [
+      {
+        source: '/(.*)', // Applies to all routes
+        headers: [
+          {
+            // Prevents your site from being embedded in an iframe (Clickjacking protection)
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            // Forces the browser to trust the Content-Type header (prevents MIME sniffing)
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            // Controls how much referrer information is included with requests
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin',
+          },
+          {
+            // Enforces secure HTTPS connections and prevents protocol downgrade attacks
+            key: 'Strict-Transport-Security',
+            value: 'max-age=31536000; includeSubDomains; preload',
+          },
+          {
+            // Restricts access to device hardware (camera, microphone) to prevent malicious tracking
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=()',
+          },
+        ],
+      },
+    ];
+  },
+}; 
+
+const withPWAConfig = withPWA({
+  dest: "public",
+  cacheOnFrontEndNav: true,
+  aggressiveFrontEndNavCaching: true,
+  reloadOnOnline: true,
+  disable: process.env.NODE_ENV === "development", 
+})(nextConfig);
+
+export default withPWAConfig;

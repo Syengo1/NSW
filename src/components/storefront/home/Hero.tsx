@@ -14,6 +14,7 @@ interface NetworkInformation extends EventTarget {
 
 // --- CONFIG: DATA SOURCES ---
 const PLAYLIST = [
+  /*
   {
     id: 1,
     type: 'video',
@@ -21,18 +22,21 @@ const PLAYLIST = [
     poster: '/poster.webp',
     duration: 0, 
   },
+  */
   {
     id: 2,
     type: 'image',
-    src: '/slide.jpg',
+    src: '/slide3.webp',
     duration: 3000, 
   },
+  /*
   {
     id: 3,
     type: 'image',
     src: '/slide2.webp',
     duration: 3000,
   }
+  */
 ];
 
 // --- HOOK: ENVIRONMENT AWARENESS ---
@@ -329,11 +333,11 @@ export default function HeroSection() {
           Welcome to OP Fits
         </h2>
         <p className="text-3xl md:text-5xl font-black uppercase tracking-tighter max-w-3xl leading-[1.1] drop-shadow-2xl mb-6 animate-in slide-in-from-bottom-10 duration-1000 delay-500">
-          Redefining the culture through fabric, form, and function.
+          Style in Every Fit.
         </p>
         <p className="text-xs md:text-sm text-neutral-300 max-w-xl leading-relaxed drop-shadow-md mb-10 animate-in fade-in zoom-in duration-1000 delay-700">
-          We curate pieces that speak to the soul of the city. Bold, authentic, and unapologetically premium. 
-          Explore the latest drops and archives below.
+          Welcome to the Home of Fashionable, Affordable and Authentic Clothing. <br/>
+          Join the OP Fits movement and redefine your style with us today.
         </p>
         
         <div className="flex flex-col md:flex-row gap-4 animate-in fade-in slide-in-from-bottom-10 duration-1000 delay-1000">
@@ -341,14 +345,14 @@ export default function HeroSection() {
              href="/shop?sort=newest" 
              className="group relative bg-white text-black px-8 py-4 font-black uppercase tracking-widest text-xs overflow-hidden"
            >
-             <span className="relative z-10 group-hover:text-white transition-colors duration-300">Shop New Drops</span>
+             <span className="relative z-10 group-hover:text-white transition-colors duration-300">Shop Now</span>
              <div className="absolute inset-0 bg-black transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-300 ease-out" />
            </Link>
            <Link 
-             href="/shop?category=Hoodies" 
+             href="/explore" 
              className="group relative border border-white text-white px-8 py-4 font-black uppercase tracking-widest text-xs hover:bg-white hover:text-black transition-all"
            >
-             View Lookbook
+             Explore
            </Link>
         </div>
       </div>
