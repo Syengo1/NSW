@@ -26,7 +26,7 @@ const nextConfig: NextConfig = {
   },
 
   turbopack: {},
-  
+
   async headers() {
     return [
       {
@@ -55,7 +55,7 @@ const nextConfig: NextConfig = {
           {
             // Restricts access to device hardware (camera, microphone) to prevent malicious tracking
             key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=()',
+            value: 'camera=(), microphone=(), geolocation=(self)',
           },
         ],
       },
