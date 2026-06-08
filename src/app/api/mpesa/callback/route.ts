@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
       // Trigger Telegram Dispatch as a floating promise. 
       // Do not use 'await' here so Safaricom gets their 200 OK instantly.
       if (!updateError) {
-        sendAdminTelegramAlert({
+        await sendAdminTelegramAlert({
           orderNumber: existingOrder.order_number,
           customerName: existingOrder.customer_name,
           phone: existingOrder.customer_phone,
