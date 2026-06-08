@@ -1,6 +1,8 @@
+// src/app/api/mpesa/callback/route.ts
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse, type NextRequest } from "next/server";
 import { revalidatePath } from 'next/cache';
+import { sendAdminTelegramAlert } from "@/lib/services/notifications";
 
 // --- STRICT TYPESCRIPT INTERFACES ---
 interface MpesaCallbackItem {
@@ -43,7 +45,6 @@ export async function POST(request: NextRequest) {
     const forwardedFor = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip');
     const clientIp = forwardedFor ? forwardedFor.split(',')[0].trim() : 'UNKNOWN';
 
-    // Relaxed for local ngrok testing
     const isLocal = process.env.NODE_ENV === 'development';
 
     if (!isLocal && !SAFARICOM_IPS.has(clientIp)) {
@@ -90,9 +91,10 @@ export async function POST(request: NextRequest) {
     );
 
     // 5. FETCH ORDER & IDEMPOTENCY CHECK
+    // Expanded fetch to pull data required for the Telegram dispatch receipt
     const { data: existingOrder, error: orderError } = await supabase
       .from('orders')
-      .select('id, status, customer_phone')
+      .select('id, status, order_number, customer_name, customer_phone, total_amount')
       .eq('mpesa_request_id', CheckoutRequestID)
       .single();
 
@@ -119,7 +121,7 @@ export async function POST(request: NextRequest) {
     const isSuccess = ResultCode === 0;
 
     if (!isSuccess) {
-      // --- FAILURE HANDLING (CONCURRENT RESTOCK) ---
+      // --- FAILURE HANDLING ---
       console.warn(JSON.stringify({
         event: 'PAYMENT_FAILED',
         orderId: existingOrder.id,
@@ -128,33 +130,10 @@ export async function POST(request: NextRequest) {
       }));
 
       // A. Update Status
+      // The database trigger `on_order_failed_restock` will automatically 
+      // intercept this update, restock the variants, and log the ledger!
       await supabase.from('orders').update({ status: 'failed' }).eq('id', existingOrder.id);
 
-      // B. Restore Stock Concurrently (Performance Boost)
-      const { data: orderItems } = await supabase
-        .from('order_items')
-        .select('variant_id, quantity')
-        .eq('order_id', existingOrder.id);
-
-      if (orderItems && orderItems.length > 0) {
-        // Execute all DB operations in parallel rather than waiting for each one
-        await Promise.all(
-          orderItems.map(async (item) => {
-            await supabase.rpc('decrement_stock', { 
-               row_id: item.variant_id, 
-               amount: -Math.abs(item.quantity) 
-            });
-            
-            await supabase.from('inventory_ledger').insert({
-               variant_id: item.variant_id,
-               quantity_change: item.quantity,
-               // Dynamically log user cancellation vs insufficient funds
-               reason: ResultCode === 1032 ? 'payment_cancelled_by_user' : 'payment_failure_restock',
-               reference_id: existingOrder.id
-            });
-          })
-        );
-      }
     } else {
       // --- SUCCESS HANDLING ---
       const items = CallbackMetadata?.Item || [];
@@ -169,19 +148,31 @@ export async function POST(request: NextRequest) {
         latency: Date.now() - startTime
       }));
 
-      await supabase
+      const { error: updateError } = await supabase
         .from('orders')
         .update({ 
           status: 'paid',
           mpesa_receipt: String(receiptNumber)
         })
         .eq('id', existingOrder.id);
+
+      // Trigger Telegram Dispatch as a floating promise. 
+      // Do not use 'await' here so Safaricom gets their 200 OK instantly.
+      if (!updateError) {
+        sendAdminTelegramAlert({
+          orderNumber: existingOrder.order_number,
+          customerName: existingOrder.customer_name,
+          phone: existingOrder.customer_phone,
+          amount: existingOrder.total_amount,
+          receiptNumber: String(receiptNumber),
+        }).catch(err => console.error("Telegram Alert Failed:", err));
+      }
     }
 
     // 7. CACHE INVALIDATION
     revalidatePath('/admin/orders');
     revalidatePath('/admin/products');
-    revalidatePath(`/track-order/${existingOrder.id}`);
+    revalidatePath(`/track-order/${existingOrder.order_number}`); // Tracking links use order_number, not id
 
     return NextResponse.json({ message: "Callback processed successfully" });
 
