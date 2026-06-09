@@ -1,12 +1,32 @@
 // src/lib/services/notifications.ts
 
-export async function sendAdminTelegramAlert(orderData: {
+export interface TelegramDispatchPayload {
   orderNumber: string;
-  customerName: string;
-  phone: string;
   amount: number;
   receiptNumber: string;
-}) {
+  
+  // Customer Details
+  customerName: string;
+  customerPhone: string;
+  
+  // Recipient Details (If it's a gift)
+  recipientName?: string | null;
+  recipientPhone?: string | null;
+  
+  // Logistics
+  deliveryMethod: string; // 'pickup' | 'delivery'
+  location?: string | null;
+  coordinates?: string | null;
+  
+  // Cart Items
+  items: Array<{
+    quantity: number;
+    product_name: string;
+    variant_name: string;
+  }>;
+}
+
+export async function sendAdminTelegramAlert(orderData: TelegramDispatchPayload) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.opfits.com';
@@ -16,24 +36,54 @@ export async function sendAdminTelegramAlert(orderData: {
     return;
   }
 
-  // Format the amount as currency
+  // 1. Format Currency
   const formattedAmount = new Intl.NumberFormat('en-KE', { 
     style: 'currency', 
     currency: 'KES' 
   }).format(orderData.amount / 100);
 
-  // HTML Formatted Message for a clean look
+  // 2. Format Items List
+  const itemsText = orderData.items && orderData.items.length > 0 
+    ? orderData.items.map(i => `▪️ ${i.quantity}x <b>${i.product_name}</b>\n   <i>(${i.variant_name})</i>`).join('\n')
+    : "<i>No items found in payload</i>";
+
+  // 3. Format Logistics Block
+  let logisticsText = "";
+  if (orderData.deliveryMethod === 'pickup') {
+    logisticsText = `🏬 <b>Method:</b> STORE PICKUP`;
+  } else {
+    const mapsLink = orderData.coordinates 
+      ? `\n🗺️ <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(orderData.coordinates)}">Open GPS Route</a>` 
+      : "";
+    logisticsText = `🚚 <b>Method:</b> DELIVERY\n📍 <b>Address:</b> ${orderData.location || 'Not provided'}${mapsLink}`;
+  }
+
+  // 4. Format Recipient (If different from customer)
+  const isGift = orderData.recipientPhone && orderData.recipientPhone !== orderData.customerPhone;
+  const recipientText = isGift 
+    ? `\n\n🎁 <b>RECIPIENT DETAILS</b>\n👤 <b>Name:</b> ${orderData.recipientName}\n📞 <b>Phone:</b> ${orderData.recipientPhone}`
+    : "";
+
+  // 5. Construct Final HTML Message
+  // Telegram requires strict HTML. Using <b>, <i>, <a>
   const message = `
 🚨 <b>PAYMENT SECURED!</b> 🚨
 
-<b>Order:</b> ${orderData.orderNumber}
-<b>Amount:</b> ${formattedAmount}
-<b>Receipt:</b> ${orderData.receiptNumber}
+💰 <b>Amount:</b> ${formattedAmount}
+🧾 <b>Receipt:</b> ${orderData.receiptNumber}
+🔖 <b>Order:</b> #${orderData.orderNumber}
 
-<b>Customer:</b> ${orderData.customerName}
-<b>Phone:</b> ${orderData.phone}
+👤 <b>CUSTOMER</b>
+<b>Name:</b> ${orderData.customerName}
+<b>Phone:</b> ${orderData.customerPhone}${recipientText}
 
-<a href="${appUrl}/admin/orders">View in Command Center</a>
+📦 <b>LOGISTICS</b>
+${logisticsText}
+
+🛒 <b>ORDER SUMMARY</b>
+${itemsText}
+
+🔗 <a href="${appUrl}/admin/orders?highlight=${orderData.orderNumber}">View in Command Center</a>
   `.trim();
 
   try {
@@ -44,7 +94,7 @@ export async function sendAdminTelegramAlert(orderData: {
         chat_id: chatId,
         text: message,
         parse_mode: 'HTML',
-        disable_web_page_preview: true, // Prevents giant link previews taking up screen space
+        disable_web_page_preview: true, 
       }),
     });
 

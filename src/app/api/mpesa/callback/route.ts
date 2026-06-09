@@ -94,7 +94,24 @@ export async function POST(request: NextRequest) {
     // Expanded fetch to pull data required for the Telegram dispatch receipt
     const { data: existingOrder, error: orderError } = await supabase
       .from('orders')
-      .select('id, status, order_number, customer_name, customer_phone, total_amount')
+      .select(`
+        id, 
+        status, 
+        order_number, 
+        customer_name, 
+        customer_phone, 
+        total_amount,
+        delivery_method,
+        customer_location,
+        delivery_coordinates,
+        recipient_name,
+        recipient_phone,
+        order_items (
+          quantity,
+          product_name,
+          variant_name
+        )
+      `)
       .eq('mpesa_request_id', CheckoutRequestID)
       .single();
 
@@ -161,10 +178,21 @@ export async function POST(request: NextRequest) {
       if (!updateError) {
         await sendAdminTelegramAlert({
           orderNumber: existingOrder.order_number,
-          customerName: existingOrder.customer_name,
-          phone: existingOrder.customer_phone,
           amount: existingOrder.total_amount,
           receiptNumber: String(receiptNumber),
+          customerName: existingOrder.customer_name,
+          customerPhone: existingOrder.customer_phone,
+          recipientName: existingOrder.recipient_name,
+          recipientPhone: existingOrder.recipient_phone,
+          deliveryMethod: existingOrder.delivery_method,
+          location: existingOrder.customer_location,
+          coordinates: existingOrder.delivery_coordinates,
+          items: (existingOrder.order_items as unknown) as Array<{
+            quantity: number;
+            product_name: string;
+            variant_name: string;
+          }>
+          
         }).catch(err => console.error("Telegram Alert Failed:", err));
       }
     }
