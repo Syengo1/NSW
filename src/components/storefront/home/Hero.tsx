@@ -12,7 +12,6 @@ interface NetworkInformation extends EventTarget {
   effectiveType?: 'slow-2g' | '2g' | '3g' | '4g';
 }
 
-// --- CONFIG: DATA SOURCES ---
 const PLAYLIST = [
   {
     id: 1,
@@ -27,94 +26,73 @@ const PLAYLIST = [
     src: '/slide3.webp',
     duration: 3000, 
   },
-  /*
   {
     id: 3,
     type: 'image',
     src: '/slide2.webp',
     duration: 3000,
   }
-  */
 ];
 
 // --- HOOK: ENVIRONMENT AWARENESS ---
 function useSmartEnvironment() {
-  const [isLowPower, setIsLowPower] = useState(false);
-  const [isLowData, setIsLowData] = useState(false);
+  const [env, setEnv] = useState({ isLowPower: false, isLowData: false, isReady: false });
 
   useEffect(() => {
-    let checkConnection: () => void;
-    let conn: NetworkInformation | undefined;
+    let isLowData = false;
+    let isLowPower = false;
 
-    // 1. Check Network (Data Saver)
     if (typeof navigator !== 'undefined' && 'connection' in navigator) {
+      // 🚨 ESLINT FIX: Safely typed Navigator intersection (No 'any')
       const nav = navigator as Navigator & { connection?: NetworkInformation };
-      conn = nav.connection;
-      
-      if (conn) {
-        checkConnection = () => {
-          if (conn?.saveData || conn?.effectiveType === '2g' || conn?.effectiveType === 'slow-2g') {
-            setIsLowData(true);
-          } else {
-            setIsLowData(false);
-          }
-        };
-        checkConnection();
-        conn.addEventListener('change', checkConnection);
+      const conn = nav.connection;
+      if (conn?.saveData || conn?.effectiveType === '2g' || conn?.effectiveType === 'slow-2g') {
+        isLowData = true;
       }
     }
 
-    // 2. Check Battery / Power
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const handleMotionChange = (e: MediaQueryListEvent) => setIsLowPower(e.matches);
-    
-    // FIX: Defer initial state setting to prevent synchronous cascading renders (ESLint Error)
-    const powerTimer = setTimeout(() => setIsLowPower(mediaQuery.matches), 0);
-    mediaQuery.addEventListener('change', handleMotionChange);
+    isLowPower = mediaQuery.matches;
 
-    return () => {
-      if (conn && checkConnection) conn.removeEventListener('change', checkConnection);
-      clearTimeout(powerTimer);
-      mediaQuery.removeEventListener('change', handleMotionChange);
-    };
+    // 🚨 REACT 18 FIX: Pushed to end of execution queue to prevent cascading renders
+    const timer = setTimeout(() => {
+      setEnv({ isLowPower, isLowData, isReady: true });
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, []);
 
-  return { isLowPower, isLowData };
+  return env;
 }
 
 export default function HeroSection() {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(true);
-  const [progress, setProgress] = useState(0);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [isInView, setIsInView] = useState(true); // NEW: Track viewport visibility
+  const [isInView, setIsInView] = useState(true); 
   
-  // ERROR HANDLING
   const [userOverride, setUserOverride] = useState(false); 
   const [videoError, setVideoError] = useState(false);
 
+  // 🚨 TS FIX: Explicit initial values for all refs
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLElement>(null);
+  const progressBarRef = useRef<HTMLDivElement>(null); 
+  const imageTimerRef = useRef<number | null>(null);
+  const videoTimerRef = useRef<number | null>(null);
   const playPromiseRef = useRef<Promise<void> | null>(null);
 
-  const { isLowData, isLowPower } = useSmartEnvironment();
+  const { isLowData, isLowPower, isReady } = useSmartEnvironment();
   const activeMedia = PLAYLIST[currentIdx];
 
-  // LOGIC: Play video IF (Video Type) AND (Env OK OR User Forced) AND (No Error) AND (In Viewport)
   const shouldPlayVideo = activeMedia.type === 'video' 
     && (userOverride || (!isLowData && !isLowPower))
     && !videoError
-    && isInView; // Pause if scrolled away
+    && isInView; 
   
   const effectiveType = shouldPlayVideo ? 'video' : 'image';
 
-  // RESET ERROR on slide change
-  useEffect(() => {
-    setVideoError(false);
-  }, [currentIdx]);
-
-  // --- NEW: SCROLL INTERSECTION OBSERVER ---
+  // --- 1. INTERSECTION OBSERVER ---
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new IntersectionObserver(
@@ -125,13 +103,10 @@ export default function HeroSection() {
     return () => observer.disconnect();
   }, []);
 
-  // --- PLAYBACK ENGINE ---
+  // --- 2. PLAYBACK ENGINE ---
   const safePlay = useCallback(async () => {
     const video = videoRef.current;
-    if (!video) return;
-
-    if ((isLowPower || isLowData) && !userOverride) return;
-    if (!isInView) return; // Don't play if off-screen
+    if (!video || !isInView) return;
 
     if (playPromiseRef.current) return; 
 
@@ -142,26 +117,85 @@ export default function HeroSection() {
         setIsPlaying(true);
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
-
         console.warn("Autoplay failed. Falling back to poster.", err);
         setVideoError(true); 
-        setIsPlaying(true);  
       } finally {
         playPromiseRef.current = null;
       }
     }
-  }, [isLowPower, isLowData, userOverride, isInView]);
+  }, [isInView]);
 
   const safePause = useCallback(() => {
     const video = videoRef.current;
-    if (!video) return;
-    if (!playPromiseRef.current && !video.paused) {
+    if (video && !playPromiseRef.current && !video.paused) {
       video.pause();
       setIsPlaying(false);
     }
   }, []);
 
-  // Sync playback with Viewport
+  // --- 3. ZERO-RENDER PROGRESS BAR (60FPS) ---
+  const updateProgressDOM = useCallback((percentage: number) => {
+    if (progressBarRef.current) {
+      // Failsafe to handle NaN before video metadata loads
+      const safePct = Number.isNaN(percentage) ? 0 : Math.min(Math.max(percentage, 0), 100);
+      progressBarRef.current.style.width = `${safePct}%`;
+    }
+  }, []);
+
+  const nextSlide = useCallback(() => {
+    updateProgressDOM(0);
+    setCurrentIdx((prev) => (prev + 1) % PLAYLIST.length);
+  }, [updateProgressDOM]);
+
+  // A. 60FPS Image Progress Loop
+  useEffect(() => {
+    if (effectiveType !== 'image' || !isPlaying || !isInView) {
+      if (imageTimerRef.current !== null) cancelAnimationFrame(imageTimerRef.current);
+      return;
+    }
+
+    const duration = activeMedia.duration || 5000;
+    const startTime = performance.now();
+
+    const animateImageProgress = (now: number) => {
+      const elapsed = now - startTime;
+      const pct = (elapsed / duration) * 100;
+      updateProgressDOM(pct);
+
+      if (pct >= 100) nextSlide();
+      else imageTimerRef.current = requestAnimationFrame(animateImageProgress);
+    };
+
+    imageTimerRef.current = requestAnimationFrame(animateImageProgress);
+
+    return () => {
+      if (imageTimerRef.current !== null) cancelAnimationFrame(imageTimerRef.current);
+    };
+  }, [currentIdx, isPlaying, effectiveType, activeMedia.duration, isInView, nextSlide, updateProgressDOM]);
+
+  // B. 60FPS Video Progress Loop (Replaces the choppy onTimeUpdate event)
+  useEffect(() => {
+    if (effectiveType !== 'video' || !isPlaying || !isInView) {
+      if (videoTimerRef.current !== null) cancelAnimationFrame(videoTimerRef.current);
+      return;
+    }
+
+    const animateVideoProgress = () => {
+      if (videoRef.current) {
+        const pct = (videoRef.current.currentTime / (videoRef.current.duration || 1)) * 100;
+        updateProgressDOM(pct);
+      }
+      videoTimerRef.current = requestAnimationFrame(animateVideoProgress);
+    };
+
+    videoTimerRef.current = requestAnimationFrame(animateVideoProgress);
+
+    return () => {
+      if (videoTimerRef.current !== null) cancelAnimationFrame(videoTimerRef.current);
+    };
+  }, [effectiveType, isPlaying, isInView, updateProgressDOM]);
+
+  // Sync Engine with Viewport
   useEffect(() => {
     if (!isInView) {
       safePause();
@@ -170,59 +204,7 @@ export default function HeroSection() {
     }
   }, [isInView, safePause, safePlay, effectiveType, isPlaying]);
 
-  // --- SLIDE & PROGRESS ---
-  const nextSlide = useCallback(() => {
-    setProgress(0);
-    setCurrentIdx((prev) => (prev + 1) % PLAYLIST.length);
-  }, []);
-
-  useEffect(() => {
-    if (!isPlaying && effectiveType !== 'image') return; 
-    if (!isInView) return; // Pause progress bar if scrolled away
-
-    let progressInterval: NodeJS.Timeout;
-    let slideTimeout: NodeJS.Timeout;
-
-    if (effectiveType === 'image') {
-      const duration = activeMedia.duration || 5000;
-      const intervalTime = 100;
-      const step = 100 / (duration / intervalTime); 
-      
-      progressInterval = setInterval(() => {
-        setProgress((p) => {
-          if (p >= 100) {
-            nextSlide();
-            return 0;
-          }
-          return p + step;
-        });
-      }, intervalTime);
-    }
-    else if (effectiveType === 'video') {
-       slideTimeout = setTimeout(nextSlide, 25000); 
-    }
-
-    return () => {
-      clearInterval(progressInterval);
-      clearTimeout(slideTimeout);
-    };
-  }, [currentIdx, isPlaying, effectiveType, activeMedia.duration, nextSlide, isInView]);
-
-  const handleVideoTimeUpdate = () => {
-    if (videoRef.current && effectiveType === 'video') {
-      const duration = videoRef.current.duration || 1;
-      const currentTime = videoRef.current.currentTime;
-      setProgress((currentTime / duration) * 100);
-    }
-  };
-
-  useEffect(() => {
-    if (effectiveType === 'video' && isPlaying) {
-      safePlay();
-    }
-  }, [effectiveType, isPlaying, safePlay]);
-
-  useEffect(() => setIsLoaded(true), []);
+  useEffect(() => { setVideoError(false); }, [currentIdx]);
 
   const scrollToContent = () => {
     window.scrollTo({ top: window.innerHeight, behavior: 'smooth' });
@@ -260,7 +242,7 @@ export default function HeroSection() {
               key={media.id}
               className={cn(
                 "absolute inset-0 transition-opacity duration-1000 ease-in-out will-change-opacity",
-                isActive ? "opacity-100 z-10" : "opacity-0 z-0"
+                isActive ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
               )}
             >
               {isVideoRender ? (
@@ -270,28 +252,28 @@ export default function HeroSection() {
                   poster={media.poster}
                   muted={isMuted}
                   playsInline
-                  autoPlay
+                  autoPlay={isActive}
+                  preload={index === 0 ? "auto" : "metadata"}
                   loop={false} 
-                  onTimeUpdate={isActive ? handleVideoTimeUpdate : undefined}
                   onEnded={isActive ? nextSlide : undefined}
                   className="h-full w-full object-cover"
                 />
               ) : (
                 <div className="relative h-full w-full overflow-hidden">
-                  {/* FIX: Replaced img tag with highly optimized Next.js Image Component */}
                   <Image 
                     src={srcToRender} 
                     alt="OP Fits Hero Visual"
                     fill
-                    priority={isActive}
+                    priority={index === 0} 
+                    fetchPriority={index === 0 ? "high" : "auto"}
                     sizes="100vw"
                     className={cn(
                       "object-cover transition-transform duration-[10000ms] ease-out will-change-transform",
-                      isActive && isLoaded ? "scale-110" : "scale-100"
+                      isActive && isReady ? "scale-110" : "scale-100"
                     )}
                   />
                   
-                  {media.type === 'video' && isActive && !userOverride && !videoError && (
+                  {media.type === 'video' && isActive && !userOverride && !videoError && isReady && (
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-500">
                       <div className="bg-black/40 backdrop-blur-md border border-white/10 p-6 rounded-2xl flex flex-col items-center text-center max-w-xs">
                         {isLowData ? (
@@ -326,7 +308,7 @@ export default function HeroSection() {
       </div>
 
       {/* --- CONTENT LAYER --- */}
-      <div className="relative z-20 h-full flex flex-col items-center justify-center text-center px-4 pt-20 animate-fade-in-up mix-blend-screen">
+      <div className="relative z-20 h-full flex flex-col items-center justify-center text-center px-4 pt-20 animate-fade-in-up mix-blend-screen pointer-events-none">
         <h2 className="text-sm md:text-base font-bold uppercase tracking-[0.3em] text-neutral-300 drop-shadow-lg mb-6 animate-in slide-in-from-bottom-5 duration-1000 delay-300">
           Welcome to OP Fits
         </h2>
@@ -338,7 +320,7 @@ export default function HeroSection() {
           Join the OP Fits movement and redefine your style with us today.
         </p>
         
-        <div className="flex flex-col md:flex-row gap-4 animate-in fade-in slide-in-from-bottom-10 duration-1000 delay-1000">
+        <div className="flex flex-col md:flex-row gap-4 animate-in fade-in slide-in-from-bottom-10 duration-1000 delay-1000 pointer-events-auto">
            <Link 
              href="/shop?sort=newest" 
              className="group relative bg-white text-black px-8 py-4 font-black uppercase tracking-widest text-xs overflow-hidden"
@@ -358,13 +340,14 @@ export default function HeroSection() {
       {/* --- CONTROLS --- */}
       <div className="absolute bottom-0 left-0 h-1 bg-white/10 w-full z-30">
         <div 
-          className="h-full bg-white shadow-[0_0_15px_white] transition-all duration-100 ease-linear"
-          style={{ width: `${progress}%` }}
+          ref={progressBarRef}
+          className="h-full bg-white shadow-[0_0_15px_white] will-change-[width]"
+          style={{ width: '0%' }} 
         />
       </div>
 
       <div className="absolute bottom-8 right-8 z-30 flex items-center gap-4">
-        {!userOverride && (isLowData || isLowPower) && !videoError && (
+        {!userOverride && (isLowData || isLowPower) && !videoError && isReady && (
           <div className="text-[10px] uppercase font-bold text-white/50 border border-white/20 px-2 py-1 rounded">
             Eco Mode
           </div>
@@ -402,7 +385,7 @@ export default function HeroSection() {
         {PLAYLIST.map((_, idx) => (
           <button
             key={idx}
-            onClick={() => { setCurrentIdx(idx); setProgress(0); }}
+            onClick={() => { setCurrentIdx(idx); updateProgressDOM(0); }}
             className={cn(
               "h-1 transition-all duration-300",
               currentIdx === idx ? "w-8 bg-white" : "w-4 bg-white/30 hover:bg-white/60"
