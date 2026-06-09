@@ -269,7 +269,7 @@ export default function HeroSection() {
                 <div className="relative h-full w-full bg-black">
                   <video
                     ref={isActive ? videoRef : null}
-                    src={media.src as string} 
+                    src={`${media.src}`} 
                     muted={isMuted}
                     playsInline
                     autoPlay={isActive && shouldPlayVideo}
@@ -281,7 +281,9 @@ export default function HeroSection() {
                     }}
                     onEnded={isActive ? nextSlide : undefined}
                     className="h-full w-full object-cover"
-                  />
+                  >
+                     <track kind="captions" srcLang="en" label="English" default />
+                  </video>
 
                   {isActive && !shouldPlayVideo && !userOverride && isReady && (
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-500">
@@ -328,19 +330,22 @@ export default function HeroSection() {
           );
         })}
         
-        <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-30 pointer-events-none z-10 brightness-100 contrast-150 mix-blend-overlay" />
+        <div 
+           className="absolute inset-0 opacity-30 pointer-events-none z-10 brightness-100 contrast-150 mix-blend-overlay" 
+           style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }}
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent z-10" />
       </div>
 
       {/* --- CONTENT LAYER --- */}
       <div className="relative z-20 h-full flex flex-col items-center justify-center text-center px-4 pt-20 animate-fade-in-up mix-blend-screen pointer-events-none">
-        <h2 className="text-sm md:text-base font-bold uppercase tracking-[0.3em] text-neutral-300 drop-shadow-lg mb-6 animate-in slide-in-from-bottom-5 duration-1000 delay-300">
+        <h2 className="text-sm md:text-base font-bold uppercase tracking-[0.3em] text-neutral-200 [text-shadow:0_2px_8px_rgba(0,0,0,0.8)] mb-6 animate-in slide-in-from-bottom-5 duration-1000 delay-300">
           Welcome to OP Fits
         </h2>
-        <p className="text-3xl md:text-5xl font-black uppercase tracking-tighter max-w-3xl leading-[1.1] drop-shadow-2xl mb-6 animate-in slide-in-from-bottom-10 duration-1000 delay-500">
+        <p className="text-3xl md:text-5xl font-black uppercase tracking-tighter max-w-3xl leading-[1.1] [text-shadow:0_4px_16px_rgba(0,0,0,0.8)] mb-6 animate-in slide-in-from-bottom-10 duration-1000 delay-500">
           Style in Every Fit.
         </p>
-        <p className="text-xs md:text-sm text-neutral-300 max-w-xl leading-relaxed drop-shadow-md mb-10 animate-in fade-in zoom-in duration-1000 delay-700">
+        <p className="text-xs md:text-sm text-neutral-200 max-w-xl leading-relaxed [text-shadow:0_2px_8px_rgba(0,0,0,0.8)] mb-10 animate-in fade-in zoom-in duration-1000 delay-700">
           Welcome to the Home of Fashionable, Affordable and Authentic Clothing. <br/>
           Join the OP Fits movement and redefine your style with us today.
         </p>
@@ -381,6 +386,7 @@ export default function HeroSection() {
         {progressionType === 'video' && (
           <button 
             onClick={() => setIsMuted(!isMuted)}
+            aria-label={isMuted ? "Unmute video" : "Mute video"} // 🚨 ACCESSIBILITY FIX
             className="p-2 rounded-full border border-white/20 bg-black/20 backdrop-blur-md hover:bg-white hover:text-black transition-all"
           >
             {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
@@ -393,6 +399,7 @@ export default function HeroSection() {
             else safePlay();
             setIsPlaying(!isPlaying);
           }}
+          aria-label={isPlaying ? "Pause presentation" : "Play presentation"} // 🚨 ACCESSIBILITY FIX
           className="p-2 rounded-full border border-white/20 bg-black/20 backdrop-blur-md hover:bg-white hover:text-black transition-all"
         >
           {isPlaying ? <Pause size={16} /> : <Play size={16} />}
@@ -406,10 +413,12 @@ export default function HeroSection() {
         <MoveDown size={32} strokeWidth={1} />
       </button>
 
+      {/* Pagination Buttons */}
       <div className="absolute bottom-12 left-8 z-30 flex gap-2">
         {PLAYLIST.map((_, idx) => (
           <button
             key={idx}
+            aria-label={`Go to slide ${idx + 1}`} // 🚨 ACCESSIBILITY FIX
             onClick={() => { setCurrentIdx(idx); updateProgressDOM(0); }}
             className={cn(
               "h-1 transition-all duration-300",
