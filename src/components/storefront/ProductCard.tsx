@@ -38,12 +38,10 @@ interface ProductCardProps {
 }
 
 // --- UTILITY: SAFE IMAGE VALIDATION ---
-
-// This prevents Next.js crashes if your DB still contains old Unsplash URLs
+// Prevents Next.js crashes if DB contains old Unsplash URLs or invalid strings
 const isValidImageUrl = (url?: string | null) => {
   if (!url) return false;
-  if (url.startsWith('/')) return true; // Local files are always safe
-  // Ensure the URL matches your exactly allowed Supabase/Vercel buckets
+  if (url.startsWith('/')) return true; 
   return url.includes('supabase.co') || url.includes('vercel-storage.com');
 };
 
@@ -65,13 +63,10 @@ export default function ProductCard({
   const { addItem } = useCartStore(); 
   const [adding, setAdding] = useState(false);
   const [justAdded, setJustAdded] = useState(false);
-  const [imageLoaded, setImageLoaded] = useState(false); // Used for smooth skeleton loading
+  const [imageLoaded, setImageLoaded] = useState(false); 
   
-  
-  // FIX: Replaced 'any' with the strict 'ProductVariant' interface
   const [prefetchedVariants, setPrefetchedVariants] = useState<ProductVariant[] | null>(null);
   const isFetching = useRef(false); 
-
   const [showModal, setShowModal] = useState(false);
 
   // --- LOGIC ENGINE ---
@@ -83,38 +78,22 @@ export default function ProductCard({
   const displayPrice = salePrice ? salePrice / 100 : price / 100;
   const originalPrice = price / 100;
 
-  // Evaluate image safety before rendering
   const safeImageToRender = isValidImageUrl(image) ? image : null;
   const safeHoverImage = isValidImageUrl(hoverImage) ? hoverImage : null;
 
   // --- STYLE MAPPING ---
   const styles = {
     sm: {
-      title: "text-xs",
-      cat: "text-[8px]",
-      price: "text-xs",
-      iconBox: "h-7 w-7",
-      iconSize: 12,
-      badge: "text-[8px] px-1.5 py-0.5",
-      gap: "gap-1"
+      title: "text-xs", cat: "text-[8px]", price: "text-xs",
+      iconBox: "h-7 w-7", iconSize: 12, badge: "text-[8px] px-1.5 py-0.5", gap: "gap-1"
     },
     md: {
-      title: "text-sm",
-      cat: "text-[9px]",
-      price: "text-sm",
-      iconBox: "h-9 w-9",
-      iconSize: 14,
-      badge: "text-[9px] px-2.5 py-1",
-      gap: "gap-2"
+      title: "text-sm", cat: "text-[9px]", price: "text-sm",
+      iconBox: "h-9 w-9", iconSize: 14, badge: "text-[9px] px-2.5 py-1", gap: "gap-2"
     },
     lg: {
-      title: "text-lg",
-      cat: "text-xs",
-      price: "text-lg",
-      iconBox: "h-11 w-11",
-      iconSize: 18,
-      badge: "text-xs px-3 py-1.5",
-      gap: "gap-3"
+      title: "text-lg", cat: "text-xs", price: "text-lg",
+      iconBox: "h-11 w-11", iconSize: 18, badge: "text-xs px-3 py-1.5", gap: "gap-3"
     }
   }[size];
 
@@ -141,7 +120,7 @@ export default function ProductCard({
     }
   }, [id, isSoldOut, prefetchedVariants]);
 
-  // --- HANDLER ---
+  // --- HANDLERS ---
   const handleQuickAdd = async (e: React.MouseEvent) => {
     e.preventDefault(); 
     e.stopPropagation();
@@ -179,7 +158,7 @@ export default function ProductCard({
           productId: id,
           name: title,
           price: finalPriceCents,
-          image: safeImageToRender || '', // Fallback for cart image
+          image: safeImageToRender || '', 
           quantity: 1,
           size: v.size,
           color: v.color, 
@@ -211,7 +190,6 @@ export default function ProductCard({
       <Link 
         href={`/product/${slug}`} 
         onMouseEnter={prefetchVariants}
-        // Focus state added for accessibility
         className={cn(
           "group flex flex-col h-full relative select-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-xl",
           isSoldOut && "opacity-60 grayscale-[0.5]" 
@@ -232,14 +210,15 @@ export default function ProductCard({
                 src={safeImageToRender} 
                 alt={title}
                 fill
-                sizes="(max-width: 640px) 65vw, (max-width: 1024px) 33vw, 25vw"
+                // 🚨 MOBILE PERFORMANCE FIX: Strictly sets 50vw for 2-column mobile grids
+                sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                // 🚨 LCP FIX: Explicitly links the Next.js priority flag to the native browser fetchPriority
                 priority={priority}
+                fetchPriority={priority ? "high" : "auto"}
                 onLoad={() => setImageLoaded(true)}
                 className={cn(
                   "object-cover transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] will-change-transform z-10",
                   imageLoaded ? "opacity-100" : "opacity-0",
-                  // If there is a hover image, don't scale this one on hover (looks cleaner). 
-                  // If no hover image, keep the standard scale effect.
                   safeHoverImage ? "group-hover:scale-100" : "group-hover:scale-105"
                 )}
               />
@@ -250,26 +229,25 @@ export default function ProductCard({
                   src={safeHoverImage} 
                   alt={`${title} alternate view`}
                   fill
-                  sizes="(max-width: 640px) 65vw, (max-width: 1024px) 33vw, 25vw"
-                  // Lazy load this image so it doesn't hurt your initial page speed
+                  // 🚨 MOBILE PERFORMANCE FIX: Same strict 50vw mobile size
+                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                  // 🚨 NETWORK FIX: Explicitly enforce lazy loading and async decoding
                   loading="lazy" 
+                  decoding="async"
                   className={cn(
                     "object-cover transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] will-change-transform z-20",
-                    // THE MAGIC: Hidden by default, appears and zooms slightly on hover
                     "opacity-0 scale-100 group-hover:opacity-100 group-hover:scale-105"
                   )}
                 />
               )}
             </>
           ) : (
-            // Premium Fallback State
             <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/30 bg-secondary/10 z-10 border border-border/50 border-dashed rounded-xl">
               <ImageIcon size={32} className="mb-2 opacity-50" />
               <span className="text-[10px] font-black uppercase tracking-widest">Image Unavailable</span>
             </div>
           )}
 
-          {/* Dark Overlay for better button contrast on hover */}
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 z-10 pointer-events-none" />
           
           {/* Status Badges */}

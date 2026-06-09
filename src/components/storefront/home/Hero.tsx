@@ -17,7 +17,6 @@ const PLAYLIST = [
     id: 1,
     type: 'video',
     src: 'https://ewxf0eupwexd82yb.public.blob.vercel-storage.com/nswHero.mp4', 
-    // 🚨 PERFORMANCE FIX: Poster completely removed. We use #t=0.001 to save ~500KB on mobile.
     duration: 0, 
   },
   {
@@ -43,7 +42,6 @@ function useSmartEnvironment() {
     let isLowPower = false;
 
     if (typeof navigator !== 'undefined' && 'connection' in navigator) {
-      // 🚨 ESLINT FIX: Safely typed Navigator intersection (No 'any')
       const nav = navigator as Navigator & { connection?: NetworkInformation };
       const conn = nav.connection;
       if (conn?.saveData || conn?.effectiveType === '2g' || conn?.effectiveType === 'slow-2g') {
@@ -54,7 +52,6 @@ function useSmartEnvironment() {
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     isLowPower = mediaQuery.matches;
 
-    // 🚨 REACT 18 FIX: Pushed to end of execution queue to prevent synchronous cascading re-renders
     const timer = setTimeout(() => {
       setEnv({ isLowPower, isLowData, isReady: true });
     }, 0);
@@ -74,7 +71,6 @@ export default function HeroSection() {
   const [userOverride, setUserOverride] = useState(false); 
   const [videoError, setVideoError] = useState(false);
 
-  // 🚨 TS FIX: Explicit initial values for all refs to prevent strict-mode warnings
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null); 
@@ -90,8 +86,6 @@ export default function HeroSection() {
     && !videoError
     && isInView; 
   
-  // 🚨 LOGIC UPGRADE: If Eco mode blocks the video, we treat its progression timer 
-  // like an image so the slideshow auto-advances after 5 seconds instead of getting stuck forever.
   const progressionType = (activeMedia.type === 'video' && shouldPlayVideo) ? 'video' : 'image';
 
   // --- 1. INTERSECTION OBSERVER ---
@@ -119,7 +113,7 @@ export default function HeroSection() {
         setIsPlaying(true);
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
-        console.warn("Autoplay failed. Falling back to native poster.", err);
+        console.warn("Autoplay failed. Engaging fallback timer.", err);
         setVideoError(true); 
       } finally {
         playPromiseRef.current = null;
@@ -138,7 +132,6 @@ export default function HeroSection() {
   // --- 3. ZERO-RENDER PROGRESS BAR (60FPS) ---
   const updateProgressDOM = useCallback((percentage: number) => {
     if (progressBarRef.current) {
-      // Failsafe to handle NaN before video metadata loads
       const safePct = Number.isNaN(percentage) ? 0 : Math.min(Math.max(percentage, 0), 100);
       progressBarRef.current.style.width = `${safePct}%`;
     }
@@ -175,17 +168,44 @@ export default function HeroSection() {
     };
   }, [currentIdx, isPlaying, progressionType, activeMedia.duration, isInView, nextSlide, updateProgressDOM]);
 
-  // B. 60FPS Video Progress Loop (Replaces the stuttering onTimeUpdate event)
+  // B. 60FPS Video Progress Loop with Smart Watchdog
   useEffect(() => {
     if (progressionType !== 'video' || !isPlaying || !isInView) {
       if (videoTimerRef.current !== null) cancelAnimationFrame(videoTimerRef.current);
       return;
     }
 
-    const animateVideoProgress = () => {
+    const MAX_STALL_TIME = 1000; // Watchdog
+    let lastTimeVideoProgressed = performance.now();
+    let lastVideoTime = videoRef.current?.currentTime || 0;
+
+    const animateVideoProgress = (now: number) => {
       if (videoRef.current) {
-        const pct = (videoRef.current.currentTime / (videoRef.current.duration || 1)) * 100;
+        const vid = videoRef.current;
+        const currentVideoTime = vid.currentTime;
+        const duration = vid.duration || 1;
+        const pct = (currentVideoTime / duration) * 100;
+        
         updateProgressDOM(pct);
+
+        // 1. iOS FAILSAFE: Manually advance if we hit 99.5%
+        if (pct >= 99.5) {
+          nextSlide();
+          return; 
+        }
+
+        // 2. SMART WATCHDOG: Detects silent network stalls
+        if (currentVideoTime !== lastVideoTime) {
+          // The video is actively playing! Reset the watchdog timer.
+          lastVideoTime = currentVideoTime;
+          lastTimeVideoProgressed = now;
+        } else if (now - lastTimeVideoProgressed > MAX_STALL_TIME) {
+          // The video has been frozen at the exact same millisecond for over 5 seconds
+          console.warn("Video network stall detected. Forcing next slide to prevent deadlock.");
+          setVideoError(true);
+          nextSlide();
+          return;
+        }
       }
       videoTimerRef.current = requestAnimationFrame(animateVideoProgress);
     };
@@ -195,7 +215,7 @@ export default function HeroSection() {
     return () => {
       if (videoTimerRef.current !== null) cancelAnimationFrame(videoTimerRef.current);
     };
-  }, [progressionType, isPlaying, isInView, updateProgressDOM]);
+  }, [progressionType, isPlaying, isInView, updateProgressDOM, nextSlide]);
 
   // Sync Engine with Viewport
   useEffect(() => {
@@ -246,21 +266,23 @@ export default function HeroSection() {
               )}
             >
               {media.type === 'video' ? (
-                <div className="relative h-full w-full">
+                <div className="relative h-full w-full bg-black">
                   <video
                     ref={isActive ? videoRef : null}
-                    // 🚨 NATIVE POSTER FIX: #t=0.001 forces iOS/Safari to extract and render the first frame natively
-                    src={`${media.src}#t=0.001`} 
+                    src={media.src as string} 
                     muted={isMuted}
                     playsInline
                     autoPlay={isActive && shouldPlayVideo}
-                    preload={index === 0 ? "metadata" : "none"}
+                    preload={index === 0 ? "auto" : "none"}
                     loop={false} 
+                    onError={(e) => {
+                      console.warn("Video network error, engaging fallback.", e);
+                      setVideoError(true);
+                    }}
                     onEnded={isActive ? nextSlide : undefined}
                     className="h-full w-full object-cover"
                   />
 
-                  {/* Eco Mode Overlay displays directly over the paused video */}
                   {isActive && !shouldPlayVideo && !userOverride && isReady && (
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-500">
                       <div className="bg-black/40 backdrop-blur-md border border-white/10 p-6 rounded-2xl flex flex-col items-center text-center max-w-xs">
@@ -292,7 +314,6 @@ export default function HeroSection() {
                     src={media.src as string} 
                     alt="OP Fits Hero Visual"
                     fill
-                    // Failsafe: if an image slide is ever moved to index 0, it gets LCP network priority
                     priority={index === 0} 
                     fetchPriority={index === 0 ? "high" : "auto"}
                     sizes="100vw"
