@@ -3,20 +3,10 @@
 import posthog from 'posthog-js';
 import { PostHogProvider as PHProvider } from 'posthog-js/react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 
-// 1. Initialize PostHog safely on the client side
-if (typeof window !== 'undefined') {
-  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
-    api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST!,
-    person_profiles: 'always', // Essential for tracking an anonymous user from landing page to checkout
-    capture_pageview: false, // We will trigger this manually to support Next.js App Router
-    capture_pageleave: true,
-  });
-}
-
-// 2. Dedicated component to track Next.js route changes
-export function PostHogPageview() {
+// --- 1. THE TRACKER LOGIC ---
+function PostHogPageviewTracker() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -35,7 +25,34 @@ export function PostHogPageview() {
   return null;
 }
 
-// 3. The main wrapper provider
+// --- 2. THE SUSPENSE WRAPPER (CRITICAL NEXT.JS FIX) ---
+// 🚨 PERFORMANCE FIX: Wrapping useSearchParams in Suspense prevents Next.js from 
+// de-optimizing the entire application into Server-Side Rendering (SSR).
+// This single wrapper restores your Stale-While-Revalidate (ISR) Edge Caching.
+export function PostHogPageview() {
+  return (
+    <Suspense fallback={null}>
+      <PostHogPageviewTracker />
+    </Suspense>
+  );
+}
+
+// --- 3. THE MAIN PROVIDER ---
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
+  
+  useEffect(() => {
+    // 🚨 CPU / LCP FIX: By moving the initialization inside a useEffect, 
+    // PostHog will wait until the browser has fully painted the storefront 
+    // before it boots up. This entirely clears the "Legacy JS" main-thread block.
+    if (typeof window !== 'undefined' && !posthog.__loaded) {
+      posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
+        api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST!,
+        person_profiles: 'always', 
+        capture_pageview: false, 
+        capture_pageleave: true,
+      });
+    }
+  }, []);
+
   return <PHProvider client={posthog}>{children}</PHProvider>;
 }
