@@ -13,7 +13,6 @@ export default function RealtimeOrderAlerts() {
   useEffect(() => {
     const supabase = createClient();
     
-    // DEBUG 1: Confirms the component is actively running
     console.log("🔌 Realtime Order Listener Mounted");
 
     const channel = supabase
@@ -26,19 +25,15 @@ export default function RealtimeOrderAlerts() {
           table: 'orders',
         },
         (payload) => {
-          // DEBUG 2: Prints the exact data arriving from the database
           console.log("🔔 RAW REALTIME PAYLOAD RECEIVED:", payload);
 
           const oldRecord = payload.old;
           const newRecord = payload.new;
 
-          // Defensive Check: Fallback if old status is ever missing
           const oldStatus = oldRecord?.status;
           const newStatus = newRecord?.status;
 
-          const justPaid = 
-            (oldStatus === 'pending_payment' || !oldStatus) && 
-            (newStatus === 'paid' || newStatus === 'processing');
+          const justPaid = newStatus === 'paid' && oldStatus !== 'paid';
 
           if (justPaid) {
             const audio = new Audio('/notification.mp3');
@@ -52,7 +47,7 @@ export default function RealtimeOrderAlerts() {
               action: {
                 label: 'Fulfill Order',
                 onClick: () => {
-                  router.push(`/admin/orders?highlight=${newRecord.id}`);
+                  router.push(`/admin/orders?highlight=${newRecord.order_number}`);
                 },
               },
             });
@@ -60,7 +55,6 @@ export default function RealtimeOrderAlerts() {
         }
       )
       .subscribe((status) => {
-        // DEBUG 3: Confirms the WebSocket connected successfully
         console.log("📡 Supabase Realtime Status:", status);
       });
 

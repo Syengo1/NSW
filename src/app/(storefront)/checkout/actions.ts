@@ -13,6 +13,7 @@ interface ProductRelation {
   title: string;
   base_price: number;
   sale_price: number | null;
+  cost_price: number | null; // 🚨 UPGRADE: Required for profit analytics
 }
 
 // --- HELPER: Haversine Distance Calculation ---
@@ -27,10 +28,10 @@ function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: num
 
 function calculateDeliveryFee(distanceKm: number): number {
   if (distanceKm <= 8) return 0;
-  if (distanceKm <= 20) return 15000;  // 150 * 100 KES
-  if (distanceKm <= 35) return 20000;  // 200 * 100 KES
-  if (distanceKm <= 60) return 30000;  // 300 * 100 KES
-  return 100000; // 1000 * 100 KES
+  if (distanceKm <= 20) return 15000;  // 150 KES
+  if (distanceKm <= 35) return 20000;  // 200 KES
+  if (distanceKm <= 60) return 30000;  // 300 KES
+  return 100000; // 1000 KES
 }
 
 export async function processCheckout(
@@ -38,7 +39,7 @@ export async function processCheckout(
   cartItems: CartItem[], 
   expectedTotalCents: number
 ) {
-  // Service Role is required here to safely bypass RLS during secure checkout creation
+  // Service Role securely bypasses RLS for order generation
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -46,10 +47,13 @@ export async function processCheckout(
   );
 
   const deliveryMethod = formData.get('deliveryMethod') as string;
-  const payerPhone = formData.get('payerPhone') as string;
   const payerName = formData.get('payerName') as string;
+  
+  // 🚨 UPGRADE: Sanitize phone inputs immediately to ensure pristine database records
+  const payerPhone = (formData.get('payerPhone') as string).replace(/\s+/g, '');
   const recipientName = (formData.get('recipientName') as string) || payerName;
-  const recipientPhone = (formData.get('recipientPhone') as string) || payerPhone;
+  const recipientPhone = ((formData.get('recipientPhone') as string) || payerPhone).replace(/\s+/g, '');
+  
   const coordinatesStr = formData.get('coordinates') as string;
   const addressText = formData.get('addressText') as string;
   const houseDetails = (formData.get('houseDetails') as string) || '';
@@ -75,7 +79,6 @@ export async function processCheckout(
       calculatedDeliveryFee = calculateDeliveryFee(distance);
 
     } catch (locationError: unknown) {
-      // FIX: Utilize the error variable to log invalid location attempts silently
       const msg = locationError instanceof Error ? locationError.message : "Invalid Location";
       console.warn("[Checkout Warning] Location calculation failed:", msg);
       return { success: false, error: msg };
@@ -84,18 +87,15 @@ export async function processCheckout(
 
   // 2. CORE DATABASE TRANSACTION
   try {
+    // 🚨 UPGRADE: Added `cost_price` to the fetch query for profit tracking
     const { data: variants, error: variantError } = await supabase
       .from('variants')
-      .select('id, size, color, price_adjustment, stock_quantity, products(title, base_price, sale_price)')
+      .select('id, size, color, price_adjustment, stock_quantity, products(title, base_price, sale_price, cost_price)')
       .in('id', cartItems.map(i => i.variantId));
 
-    if (variantError) {
+    if (variantError || !variants || variants.length === 0) {
       console.error("[Checkout Error] Variant fetch failed:", variantError);
-      return { success: false, error: "Failed to verify inventory." };
-    }
-
-    if (!variants || variants.length === 0) {
-        return { success: false, error: "Inventory check failed or items removed." };
+      return { success: false, error: "Inventory check failed or items removed." };
     }
 
     let productsTotalCents = 0;
@@ -125,7 +125,8 @@ export async function processCheckout(
         product_name: product.title,
         variant_name: `Size: ${dbVariant.size || 'STD'} - ${dbVariant.color}`, 
         quantity: item.quantity,
-        price_at_purchase: unitPrice
+        price_at_purchase: unitPrice,
+        cost_at_purchase: product.cost_price || 0 // 🚨 UPGRADE: Captures exact cost for dynamic profit metrics
       });
     }
 
@@ -167,15 +168,12 @@ export async function processCheckout(
     if (itemsError) {
       console.error("[Checkout Error] Order items insertion failed:", itemsError);
       
-      // Attempt manual rollback to avoid orphaned records
+      // Manual rollback to prevent dead stock loops
       const { error: rollbackError } = await supabase.from('orders').delete().eq('id', order.id);
-      
-      if (rollbackError) {
-         console.error(`[CRITICAL LEAK] Failed to rollback orphaned order ID ${order.id}:`, rollbackError);
-      }
+      if (rollbackError) console.error(`[CRITICAL LEAK] Failed to rollback orphaned order ID ${order.id}:`, rollbackError);
 
-      // If the database trigger blocked it due to negative stock
-      if (itemsError.message.includes('check_stock_non_negative')) {
+      // 🚨 UPGRADE: Stringify the entire error object. PostgreSQL often buries constraint names in the .details or .hint keys.
+      if (JSON.stringify(itemsError).includes('check_stock_non_negative')) {
         return { success: false, error: "Someone just bought the last unit of an item in your cart!", triggerSync: true };
       }
       throw new Error("Failed to save order items.");
@@ -183,21 +181,30 @@ export async function processCheckout(
 
     // 6. INITIATE M-PESA STK PUSH
     try {
-      const res = await initiateSTKPush(payerPhone, grandTotalCents / 100, order.id);
-      await supabase.from('orders').update({ mpesa_request_id: res.checkoutRequestId }).eq('id', order.id);
+      const res = await initiateSTKPush(payerPhone, grandTotalCents / 100, order.order_number);
       
+      const { error: updateError } = await supabase.from('orders').update({ mpesa_request_id: res.checkoutRequestId }).eq('id', order.id);
+      
+      // 🚨 UPGRADE: Critical system logging. If this update fails, the Webhook will not be able to find the order.
+      if (updateError) {
+         console.error(`[CRITICAL DB ERROR] Failed to link M-Pesa Request ID ${res.checkoutRequestId} to Order ${order.order_number}`);
+      }
+
       return { success: true, orderId: order.order_number };
 
     } catch (mpesaError: unknown) {
-      // FIX: The ESLint unused variable error is resolved. The variable is safely logged to the server.
       console.error("[Daraja Gateway Error] M-Pesa STK Push Failed:", mpesaError);
       
-      // We don't fail the order here. Safaricom might just be slow. The user can retry from the tracking page.
-      return { success: true, orderId: order.order_number, warning: "Payment push failed. Safaricom might be delayed. Retry from the tracking page." };
+      // We do not fail the order here. Safaricom might just be temporarily down. 
+      // The order exists in a 'pending_payment' state and the user can safely retry it from their tracking page.
+      return { 
+         success: true, 
+         orderId: order.order_number, 
+         warning: "Payment push failed. Safaricom might be delayed. You can retry the payment directly from your tracking page." 
+      };
     }
 
   } catch (globalError: unknown) {
-    // FIX: Catch unexpected crashes (e.g. Supabase going offline)
     console.error("[Checkout Error] Global processing crash:", globalError);
     return { 
       success: false, 
