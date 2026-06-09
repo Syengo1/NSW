@@ -280,14 +280,17 @@ export default function ProductCard({
           {/* ACTION BUTTONS */}
           {!isSoldOut && (
             <div className={cn(
-               "absolute bottom-3 right-3 flex z-20 transition-all duration-400 ease-[cubic-bezier(0.23,1,0.32,1)]",
+               // 🚨 GPU FIX: Added transform-gpu and z-30 to prevent Safari from dropping the layer during scroll
+               "absolute bottom-3 right-3 flex z-30 transition-all duration-400 ease-[cubic-bezier(0.23,1,0.32,1)] transform-gpu",
                styles.gap,
+               // 🚨 INVISIBLE FIX: Moved from `md:` (Tablets) to `lg:` (Desktops). Tablets can't hover!
                "opacity-100 translate-y-0",
-               "md:opacity-0 md:translate-y-8 md:group-hover:translate-y-0 md:group-hover:opacity-100"
+               "lg:opacity-0 lg:translate-y-8 lg:group-hover:translate-y-0 lg:group-hover:opacity-100"
             )}>
               
               <div className={cn(
-                "bg-white/90 dark:bg-neutral-900/90 backdrop-blur-md text-foreground rounded-full flex items-center justify-center shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:scale-110 transition-transform cursor-pointer border border-border/20",
+                // 🚨 BLURRY GREY FIX: Removed backdrop-blur-md. Solid contrasting colors eliminate the iOS WebKit blur bug entirely.
+                "bg-white dark:bg-neutral-900 text-black dark:text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform cursor-pointer border border-border/10",
                 styles.iconBox
               )}>
                 <ArrowUpRight size={styles.iconSize} strokeWidth={2.5} />
@@ -298,14 +301,15 @@ export default function ProductCard({
                 disabled={adding}
                 aria-label="Quick Add to Bag"
                 className={cn(
-                  "rounded-full flex items-center justify-center shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-all border border-border/20 relative",
+                  "rounded-full flex items-center justify-center shadow-lg transition-all border border-border/10 relative",
                   styles.iconBox,
                   justAdded 
                     ? "bg-emerald-600 border-emerald-600 text-white" 
                     : "bg-black dark:bg-white text-white dark:text-black hover:scale-110 active:scale-95"
                 )}
               >
-                <span className="absolute -inset-3 md:inset-0" /> 
+                {/* Extends the touchable area on mobile devices */}
+                <span className="absolute -inset-3 lg:inset-0" /> 
                 
                 {adding ? (
                   <Loader2 size={styles.iconSize} className="animate-spin text-current" />
