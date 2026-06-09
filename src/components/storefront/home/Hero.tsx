@@ -17,7 +17,7 @@ const PLAYLIST = [
     id: 1,
     type: 'video',
     src: 'https://ewxf0eupwexd82yb.public.blob.vercel-storage.com/nswHero.mp4', 
-    poster: '/poster.webp',
+    // 🚨 PERFORMANCE FIX: Poster completely removed. We use #t=0.001 to save ~500KB on mobile.
     duration: 0, 
   },
   {
@@ -54,7 +54,7 @@ function useSmartEnvironment() {
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     isLowPower = mediaQuery.matches;
 
-    // 🚨 REACT 18 FIX: Pushed to end of execution queue to prevent cascading renders
+    // 🚨 REACT 18 FIX: Pushed to end of execution queue to prevent synchronous cascading re-renders
     const timer = setTimeout(() => {
       setEnv({ isLowPower, isLowData, isReady: true });
     }, 0);
@@ -74,7 +74,7 @@ export default function HeroSection() {
   const [userOverride, setUserOverride] = useState(false); 
   const [videoError, setVideoError] = useState(false);
 
-  // 🚨 TS FIX: Explicit initial values for all refs
+  // 🚨 TS FIX: Explicit initial values for all refs to prevent strict-mode warnings
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null); 
@@ -90,7 +90,9 @@ export default function HeroSection() {
     && !videoError
     && isInView; 
   
-  const effectiveType = shouldPlayVideo ? 'video' : 'image';
+  // 🚨 LOGIC UPGRADE: If Eco mode blocks the video, we treat its progression timer 
+  // like an image so the slideshow auto-advances after 5 seconds instead of getting stuck forever.
+  const progressionType = (activeMedia.type === 'video' && shouldPlayVideo) ? 'video' : 'image';
 
   // --- 1. INTERSECTION OBSERVER ---
   useEffect(() => {
@@ -117,7 +119,7 @@ export default function HeroSection() {
         setIsPlaying(true);
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
-        console.warn("Autoplay failed. Falling back to poster.", err);
+        console.warn("Autoplay failed. Falling back to native poster.", err);
         setVideoError(true); 
       } finally {
         playPromiseRef.current = null;
@@ -149,7 +151,7 @@ export default function HeroSection() {
 
   // A. 60FPS Image Progress Loop
   useEffect(() => {
-    if (effectiveType !== 'image' || !isPlaying || !isInView) {
+    if (progressionType !== 'image' || !isPlaying || !isInView) {
       if (imageTimerRef.current !== null) cancelAnimationFrame(imageTimerRef.current);
       return;
     }
@@ -171,11 +173,11 @@ export default function HeroSection() {
     return () => {
       if (imageTimerRef.current !== null) cancelAnimationFrame(imageTimerRef.current);
     };
-  }, [currentIdx, isPlaying, effectiveType, activeMedia.duration, isInView, nextSlide, updateProgressDOM]);
+  }, [currentIdx, isPlaying, progressionType, activeMedia.duration, isInView, nextSlide, updateProgressDOM]);
 
-  // B. 60FPS Video Progress Loop (Replaces the choppy onTimeUpdate event)
+  // B. 60FPS Video Progress Loop (Replaces the stuttering onTimeUpdate event)
   useEffect(() => {
-    if (effectiveType !== 'video' || !isPlaying || !isInView) {
+    if (progressionType !== 'video' || !isPlaying || !isInView) {
       if (videoTimerRef.current !== null) cancelAnimationFrame(videoTimerRef.current);
       return;
     }
@@ -193,16 +195,16 @@ export default function HeroSection() {
     return () => {
       if (videoTimerRef.current !== null) cancelAnimationFrame(videoTimerRef.current);
     };
-  }, [effectiveType, isPlaying, isInView, updateProgressDOM]);
+  }, [progressionType, isPlaying, isInView, updateProgressDOM]);
 
   // Sync Engine with Viewport
   useEffect(() => {
     if (!isInView) {
       safePause();
-    } else if (effectiveType === 'video' && isPlaying) {
+    } else if (progressionType === 'video' && isPlaying) {
       safePlay();
     }
-  }, [isInView, safePause, safePlay, effectiveType, isPlaying]);
+  }, [isInView, safePause, safePlay, progressionType, isPlaying]);
 
   useEffect(() => { setVideoError(false); }, [currentIdx]);
 
@@ -234,8 +236,6 @@ export default function HeroSection() {
       <div className="absolute inset-0 z-0 bg-neutral-900">
         {PLAYLIST.map((media, index) => {
           const isActive = index === currentIdx;
-          const isVideoRender = media.type === 'video' && shouldPlayVideo;
-          const srcToRender = ((media.type === 'video' && !shouldPlayVideo) ? media.poster : media.src) || '';
 
           return (
             <div 
@@ -245,35 +245,23 @@ export default function HeroSection() {
                 isActive ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
               )}
             >
-              {isVideoRender ? (
-                <video
-                  ref={isActive ? videoRef : null}
-                  src={media.src as string}
-                  poster={media.poster}
-                  muted={isMuted}
-                  playsInline
-                  autoPlay={isActive}
-                  preload={index === 0 ? "auto" : "metadata"}
-                  loop={false} 
-                  onEnded={isActive ? nextSlide : undefined}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="relative h-full w-full overflow-hidden">
-                  <Image 
-                    src={srcToRender} 
-                    alt="OP Fits Hero Visual"
-                    fill
-                    priority={index === 0} 
-                    fetchPriority={index === 0 ? "high" : "auto"}
-                    sizes="100vw"
-                    className={cn(
-                      "object-cover transition-transform duration-[10000ms] ease-out will-change-transform",
-                      isActive && isReady ? "scale-110" : "scale-100"
-                    )}
+              {media.type === 'video' ? (
+                <div className="relative h-full w-full">
+                  <video
+                    ref={isActive ? videoRef : null}
+                    // 🚨 NATIVE POSTER FIX: #t=0.001 forces iOS/Safari to extract and render the first frame natively
+                    src={`${media.src}#t=0.001`} 
+                    muted={isMuted}
+                    playsInline
+                    autoPlay={isActive && shouldPlayVideo}
+                    preload={index === 0 ? "metadata" : "none"}
+                    loop={false} 
+                    onEnded={isActive ? nextSlide : undefined}
+                    className="h-full w-full object-cover"
                   />
-                  
-                  {media.type === 'video' && isActive && !userOverride && !videoError && isReady && (
+
+                  {/* Eco Mode Overlay displays directly over the paused video */}
+                  {isActive && !shouldPlayVideo && !userOverride && isReady && (
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-500">
                       <div className="bg-black/40 backdrop-blur-md border border-white/10 p-6 rounded-2xl flex flex-col items-center text-center max-w-xs">
                         {isLowData ? (
@@ -297,6 +285,22 @@ export default function HeroSection() {
                       </div>
                     </div>
                   )}
+                </div>
+              ) : (
+                <div className="relative h-full w-full overflow-hidden">
+                  <Image 
+                    src={media.src as string} 
+                    alt="OP Fits Hero Visual"
+                    fill
+                    // Failsafe: if an image slide is ever moved to index 0, it gets LCP network priority
+                    priority={index === 0} 
+                    fetchPriority={index === 0 ? "high" : "auto"}
+                    sizes="100vw"
+                    className={cn(
+                      "object-cover transition-transform duration-[10000ms] ease-out will-change-transform",
+                      isActive && isReady ? "scale-110" : "scale-100"
+                    )}
+                  />
                 </div>
               )}
             </div>
@@ -353,7 +357,7 @@ export default function HeroSection() {
           </div>
         )}
 
-        {effectiveType === 'video' && (
+        {progressionType === 'video' && (
           <button 
             onClick={() => setIsMuted(!isMuted)}
             className="p-2 rounded-full border border-white/20 bg-black/20 backdrop-blur-md hover:bg-white hover:text-black transition-all"
