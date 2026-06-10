@@ -1,8 +1,8 @@
 import { MetadataRoute } from 'next';
 
 export default function robots(): MetadataRoute.Robots {
-  // Fallback to localhost if the env var isn't set yet
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  // 🚨 ROBUSTNESS FIX: Use the actual live domain as the fallback
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.opfits.com';
 
   return {
     rules: {
@@ -14,9 +14,14 @@ export default function robots(): MetadataRoute.Robots {
         '/login/', 
         '/api/', 
         '/checkout/',
-        '/track-order/' // No need to index private order tracking pages
+        '/track-order/',
+        // 🚨 SEO FIX: Crawl Budget Optimization
+        // Prevents Googlebot from getting trapped in infinite URL parameter loops
+        // (e.g., /shop?sort=price_asc, /shop?filter=men) which dilutes your SEO ranking.
+        '/*?*' 
       ],
     },
     sitemap: `${baseUrl}/sitemap.xml`,
+    host: baseUrl, // Explicitly declare the host for strict Search Console alignment
   };
 }

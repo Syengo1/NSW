@@ -52,7 +52,7 @@ export default function Footer() {
         <p>&copy; {new Date().getFullYear()} OPFits. All rights reserved.</p>
         
         <a 
-          href="https://antony-syengo.vercel.app" 
+          href="https://antonysyengo.vercel.app" 
           target="_blank" 
           className="group flex items-center gap-2 hover:text-white transition-colors relative"
         >
