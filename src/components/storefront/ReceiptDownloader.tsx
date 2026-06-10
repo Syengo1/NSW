@@ -2,57 +2,155 @@
 
 import { Download } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { toast } from "sonner";
 
-export default function ReceiptDownloader({ order }: { order: any }) {
+// --- STRICT TYPES ---
+export interface ReceiptOrderItem {
+  quantity: number;
+  variant_name: string;
+  price_at_purchase: number;
+}
+
+export interface ReceiptOrder {
+  id: string;
+  order_number: string;
+  mpesa_receipt?: string;
+  created_at: string;
+  total_amount: number;
+  customer_name?: string; 
+  full_name?: string;     
+  order_items: ReceiptOrderItem[];
+}
+
+interface ReceiptDownloaderProps {
+  order: ReceiptOrder;
+}
+
+export default function ReceiptDownloader({ order }: ReceiptDownloaderProps) {
   
   const handleDownload = () => {
-    // Open a new window for the receipt
     const receiptWindow = window.open('', '_blank');
-    if (!receiptWindow) return alert("Please allow popups to download receipt");
+    
+    if (!receiptWindow) {
+      toast.error("Please allow popups to download your receipt.");
+      return;
+    }
+
+    const rawName = order.full_name || order.customer_name || "Valued Customer";
+    const firstName = rawName.split(' ')[0].toUpperCase();
+    const logoUrl = `${window.location.origin}/icon.png`;
 
     const html = `
+      <!DOCTYPE html>
       <html>
         <head>
-          <title>Receipt #${order.mpesa_receipt}</title>
+          <meta charset="utf-8">
+          <title>Receipt #${order.mpesa_receipt || order.order_number}</title>
           <style>
-            body { font-family: 'Courier New', monospace; padding: 40px; max-width: 400px; margin: 0 auto; }
-            .header { text-align: center; border-bottom: 2px dashed #000; padding-bottom: 20px; margin-bottom: 20px; }
-            .title { font-weight: 900; text-transform: uppercase; font-size: 20px; }
-            .row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12px; }
-            .total { border-top: 2px dashed #000; border-bottom: 2px dashed #000; padding: 10px 0; margin-top: 20px; font-weight: bold; font-size: 14px; }
-            .footer { text-align: center; margin-top: 30px; font-size: 10px; color: #666; }
-            .btn { display: none; } /* Hide buttons when printing */
-            @media print { .no-print { display: none; } }
+            @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+            
+            body { 
+              font-family: 'Space Mono', 'Courier New', monospace; 
+              padding: 40px 20px; 
+              max-width: 400px; 
+              margin: 0 auto; 
+              color: #000;
+              background: #fff;
+            }
+            
+            .header { 
+              text-align: center; 
+              margin-bottom: 30px; 
+            }
+            
+            /* 🚨 ALIGNMENT FIX: Forces the image to behave like a centered block element */
+            .receipt-logo {
+              width: 55px;
+              height: 55px;
+              object-fit: contain;
+              filter: grayscale(100%);
+              display: block;
+              margin: 0 auto 12px auto; 
+            }
+            
+            .title { 
+              font-weight: 700; 
+              text-transform: uppercase; 
+              font-size: 24px; 
+              letter-spacing: -1px; 
+              margin-bottom: 4px; 
+            }
+            
+            .subtitle { font-size: 12px; color: #666; }
+            
+            .customer-info {
+              border-top: 1px solid #000;
+              border-bottom: 1px solid #000;
+              padding: 15px 0;
+              margin-bottom: 25px;
+              font-size: 13px;
+              text-align: center;
+              line-height: 1.5;
+            }
+            
+            .row { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 13px; }
+            .item-name { max-width: 70%; line-height: 1.4; }
+            
+            .total { 
+              border-top: 2px dashed #000; 
+              padding: 15px 0 0; 
+              margin-top: 25px; 
+              font-weight: 700; 
+              font-size: 16px; 
+            }
+            
+            .footer { 
+              text-align: center; 
+              margin-top: 40px; 
+              font-size: 11px; 
+              line-height: 1.6;
+              color: #000; 
+            }
+            
+            @media print { 
+              body { padding: 0; }
+              .no-print { display: none; } 
+            }
           </style>
         </head>
         <body>
+          
           <div class="header">
-            <div class="title">OP Fits</div>
-            <div>${new Date(order.created_at).toLocaleString()}</div>
-            <div>Receipt: ${order.mpesa_receipt}</div>
+            <img src="${logoUrl}" alt="OP Fits Logo" class="receipt-logo" onload="window.print();" onerror="window.print();" />
+            <div class="title">OP FITS</div>
+            <div class="subtitle">${new Date(order.created_at).toLocaleString('en-KE')}</div>
+            <div class="subtitle">Receipt: ${order.mpesa_receipt || order.order_number}</div>
+          </div>
+
+          <div class="customer-info">
+            PREPARED FOR:<br/>
+            <strong>${rawName.toUpperCase()}</strong>
           </div>
           
-          <div>
-            ${order.order_items.map((item: any) => `
+          <div class="items">
+            ${order.order_items.map(item => `
               <div class="row">
-                <span>${item.quantity}x ${item.variant_name}</span>
-                <span>${(item.price_at_purchase/100).toLocaleString()}</span>
+                <span class="item-name">${item.quantity}x ${item.variant_name}</span>
+                <span>${(item.price_at_purchase / 100).toLocaleString()}</span>
               </div>
             `).join('')}
           </div>
 
           <div class="row total">
             <span>TOTAL PAID</span>
-            <span>KES ${(order.total_amount/100).toLocaleString()}</span>
+            <span>KES ${(order.total_amount / 100).toLocaleString()}</span>
           </div>
 
           <div class="footer">
-            <p>Thank you for supporting local.<br/>Order ID: ${order.id.slice(0,8)}</p>
+            <p>THANK YOU FOR SHOPPING AT OP FITS, ${firstName}.</p>
+            <p>WEAR IT BOLD. SECURE THE NEXT DROP AT<br/><strong>OPFITS.COM</strong></p>
+            <p style="margin-top: 20px; font-size: 10px; color: #888;">*${order.order_number.toUpperCase()}*</p>
           </div>
-
-          <script>
-            window.onload = function() { window.print(); }
-          </script>
         </body>
       </html>
     `;
@@ -64,9 +162,9 @@ export default function ReceiptDownloader({ order }: { order: any }) {
   return (
     <button 
       onClick={handleDownload}
-      className="w-full py-3 border border-border text-sm font-bold uppercase tracking-widest hover:bg-muted transition-colors flex items-center justify-center gap-2 rounded-md"
+      className="w-full py-4 bg-background border border-border shadow-sm text-xs md:text-sm font-black uppercase tracking-widest hover:bg-foreground hover:text-background transition-all duration-300 flex items-center justify-center gap-3 rounded-xl active:scale-[0.98]"
     >
-      <Download size={16} /> Download Official Receipt
+      <Download size={18} /> Official Receipt
     </button>
   );
 }

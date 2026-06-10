@@ -3,9 +3,20 @@ import Hero from "@/components/storefront/home/Hero";
 import FeaturedManager from "@/components/storefront/home/FeaturedManager";
 import NewsTicker from "@/components/storefront/home/NewsTicker";
 import Footer from "@/components/storefront/Footer";
+import type { Metadata } from "next";
+
+
 
 // Cache for 60 seconds for performance
 export const revalidate = 60;
+
+
+// --- SPECIFIC HOMEPAGE METADATA ---
+export const metadata: Metadata = {
+  title: "OP Fits | Curated Hype & Streetwear in Kenya",
+  description: "Nairobi's premier plug for exclusive streetwear, hyped sneakers, and premium apparel. Hand-picked fits, 100% authentic, delivered fast across Kenya.",
+};
+
 
 export default async function HomePage() {
   const supabase = await createClient();
