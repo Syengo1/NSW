@@ -12,8 +12,8 @@ export default function Footer() {
         <div className="space-y-4">
           <h2 className="text-white text-2xl font-black uppercase tracking-tighter">opfits.</h2>
           <p className="text-xs leading-relaxed max-w-xs">
-            Authentic Nairobi culture woven into every thread. 
-            Premium streetwear designed for the bold.
+            Nairobi&apos;s premier plug for exclusive streetwear, hyped sneakers, and premium apparel.<br/>
+            Hand-picked fits, 100% authentic, delivered fast.
           </p>
         </div>
 

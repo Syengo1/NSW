@@ -343,11 +343,11 @@ export default function HeroSection() {
           Welcome to OP Fits
         </h2>
         <p className="text-3xl md:text-5xl font-black uppercase tracking-tighter max-w-3xl leading-[1.1] [text-shadow:0_4px_16px_rgba(0,0,0,0.8)] mb-6 animate-in slide-in-from-bottom-10 duration-1000 delay-500">
-          Style in Every Fit.
+          Source The Hype. <br/> Secure The Fit.
         </p>
         <p className="text-xs md:text-sm text-neutral-200 max-w-xl leading-relaxed [text-shadow:0_2px_8px_rgba(0,0,0,0.8)] mb-10 animate-in fade-in zoom-in duration-1000 delay-700">
-          Welcome to the Home of Fashionable, Affordable and Authentic Clothing. <br/>
-          Join the OP Fits movement and redefine your style with us today.
+          Your ultimate destination for exclusive streetwear, authentic sneakers, and premium apparel. <br/> 
+          Sourced globally, curated locally, and delivered straight to your door.
         </p>
         
         <div className="flex flex-col md:flex-row gap-4 animate-in fade-in slide-in-from-bottom-10 duration-1000 delay-1000 pointer-events-auto">

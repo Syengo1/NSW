@@ -23,18 +23,18 @@ const oswald = Oswald({
 // --- METADATA ---
 export const metadata: Metadata = {
   title: {
-    default: "OP Fits | Redefining The Culture",
+    default: "OP Fits | Secure The Fit",
     template: "%s | OP Fits"
   },
-  description: "Premium streetwear crafted for the bold. Est. 2026 in Nairobi. Limited drops, exclusive fabrics, and authentic culture.",
-  keywords: ["Streetwear", "Nairobi", "Kenya", "Fashion", "Drops", "Hoodies", "Urban Culture"],
+  description: "Nairobi's premier plug for exclusive streetwear, hyped sneakers, and premium apparel. Hand-picked fits, 100% authentic, delivered fast.",
+  keywords: ["Streetwear", "Nairobi", "Kenya", "Fashion", "Drops", "Hoodies", "Urban Culture", "Nike", "Adidas", "Supreme", "Off-White", "New Balance", "Puma", "Reebok", "Limited Edition", "Exclusive", "High-Quality", "Deliver", "Delivery"],
   authors: [{ name: "OP Fits" }],
   openGraph: {
     type: "website",
     locale: "en_KE",
     siteName: "OP Fits",
     title: "OP Fits",
-    description: "Premium streetwear crafted for the bold.",
+    description: "Nairobi's premier plug for exclusive streetwear, hyped sneakers, and premium apparel. Hand-picked fits, 100% authentic, delivered fast.",
   },
   icons: {
     icon: "/icon.svg",
