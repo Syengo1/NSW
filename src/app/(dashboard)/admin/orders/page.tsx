@@ -180,32 +180,33 @@ export default async function OrdersPage(props: { searchParams?: Promise<{ highl
 
                 {/* 3. FULFILLMENT METHOD */}
                 <div className="lg:col-span-3 border-t border-border/50 pt-3 lg:border-t-0 lg:pt-0">
-                   {order.delivery_method === 'pickup' ? (
-                     <div className="flex flex-col gap-1">
-                       <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-1 rounded w-fit">
-                         <Store size={12} /> Store Pickup
-                       </span>
-                     </div>
-                   ) : (
-                     <div className="flex flex-col gap-1">
-                        <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-blue-500 bg-blue-500/10 px-2 py-1 rounded w-fit">
-                          <Truck size={12} /> Delivery
-                        </span>
-                        <div className="text-[10px] text-muted-foreground leading-tight mt-1 max-w-[200px] line-clamp-2">
-                           {order.customer_location}
-                        </div>
-                        {order.delivery_coordinates && (
-                          <a 
-                            href={`http://googleusercontent.com/maps.google.com/?q=${order.delivery_coordinates}`} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1 text-[10px] font-bold uppercase text-blue-500 hover:underline mt-1 w-fit"
-                          >
-                             <MapPin size={10} /> Open GPS
-                          </a>
-                        )}
-                     </div>
-                   )}
+                  {order.delivery_method === 'pickup' ? (
+                    <div className="flex flex-col gap-1">
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-1 rounded w-fit">
+                        <Store size={12} /> Store Pickup
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1">
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-blue-500 bg-blue-500/10 px-2 py-1 rounded w-fit">
+                        <Truck size={12} /> Delivery
+                      </span>
+                      <div className="text-[10px] text-muted-foreground leading-tight mt-1 max-w-[200px] line-clamp-2">
+                        {order.customer_location}
+                      </div>
+                      {order.delivery_coordinates && (
+                        <a 
+                          // 🚨 FIX: Official Google Maps cross-platform routing URL
+                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.delivery_coordinates)}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-[10px] font-bold uppercase text-blue-500 hover:underline mt-1 w-fit"
+                        >
+                          <MapPin size={10} /> Open GPS
+                        </a>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* 4. STATUS & TOTAL */}
