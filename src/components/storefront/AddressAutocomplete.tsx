@@ -10,7 +10,7 @@ const libraries: ("places")[] = ["places"];
 interface AddressAutocompleteProps {
   selectedAddress: string; 
   onLocationSelect: (address: string, coords: { lat: number; lng: number }) => void;
-  // NEW: Add a prop to sync manual typing back to the parent
+
   onAddressEdit: (address: string) => void; 
 }
 
@@ -42,7 +42,6 @@ export default function AddressAutocomplete({ onLocationSelect, selectedAddress,
   // SYNC EXTERNAL MAP CLICKS TO THE INPUT FIELD
   useEffect(() => {
     if (selectedAddress && selectedAddress !== value) {
-      // 'false' prevents a redundant Google API billing request when the map updates the text[cite: 14]
       setValue(selectedAddress, false);
     }
   }, [selectedAddress, setValue, value]);
@@ -70,9 +69,7 @@ export default function AddressAutocomplete({ onLocationSelect, selectedAddress,
         value={value}
         onChange={(e) => {
           const newText = e.target.value;
-          // 1. Let the Google Places hook do its job for the dropdown[cite: 14]
           setValue(newText); 
-          // 2. Sync the raw text up to the parent immediately so manual edits aren't lost
           onAddressEdit(newText); 
         }}
         disabled={!ready}

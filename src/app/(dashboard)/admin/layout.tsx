@@ -35,7 +35,7 @@ export default async function AdminLayout({
 
   // 🚨 2. PRIVILEGE ESCALATION GUARD: Is this user an Admin?
   // Option A: If you assign roles in Supabase auth metadata:
-  const isAdmin = user.app_metadata?.role === 'admin';
+  const isAdmin = user.user_metadata?.role === 'admin';
   
 
   if (!isAdmin) {

@@ -22,15 +22,15 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
 });
 
 async function createAdmin() {
-  const email = 'admin@nairobistreetwear.com'; // Change this
-  const password = 'password123';              // Change this
+  const email = 'examiner@opfits.com';
+  const password = 'TestPassword123!';             
 
   console.log(`🚀 Creating admin user: ${email}...`);
 
   const { data, error } = await supabase.auth.admin.createUser({
     email,
     password,
-    email_confirm: true, // auto-confirm the email
+    email_confirm: true, 
     user_metadata: { role: 'admin' },
   });
 

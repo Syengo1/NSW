@@ -31,7 +31,6 @@ export default function AdminSidebar() {
       {/* NAV */}
       <nav className="flex-1 p-4 space-y-1">
         {ADMIN_LINKS.map((item) => {
-          // FIX: Exact match for '/admin', prefix match for others like '/admin/products'
           const isActive = item.href === '/admin' 
             ? pathname === '/admin' 
             : pathname === item.href || pathname.startsWith(`${item.href}/`);

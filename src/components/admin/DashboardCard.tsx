@@ -6,7 +6,7 @@ interface DashboardCardProps {
   value: string | number;
   description: string;
   icon: LucideIcon;
-  trend?: number; // Added Trend Property
+  trend?: number;
 }
 
 export function DashboardCard({ title, value, description, icon: Icon, trend }: DashboardCardProps) {

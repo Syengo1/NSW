@@ -9,7 +9,7 @@ import { X, Plus, Minus, Trash2, ArrowRight, ShoppingBag, Truck, AlertCircle, Sp
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 
-// FIX 1: Strict Typing for Supabase Relational Payload
+// Strict Typing for Supabase Relational Payload
 interface SupabaseVariantResponse {
   id: string;
   stock_quantity: number | null;
@@ -31,8 +31,7 @@ export default function CartDrawer() {
     () => false
   );
 
-  // FIX 2: Derive a stable string of IDs to safely use as a useEffect dependency
-  // This prevents infinite loops while satisfying ESLint rules.
+
   const variantIdsStr = useMemo(() => {
     return items.map((i) => i.variantId).sort().join(',');
   }, [items]);
@@ -58,7 +57,6 @@ export default function CartDrawer() {
         .in('id', variantIds);
 
       if (data && !error && isSubscribed) {
-        // Cast the data using our strict Interface to eliminate 'any'
         const freshData = (data as SupabaseVariantResponse[]).map((variant) => {
           const product = Array.isArray(variant.products) ? variant.products[0] : variant.products;
           const basePrice = product?.sale_price || product?.base_price || 0;
@@ -80,7 +78,7 @@ export default function CartDrawer() {
     return () => {
       isSubscribed = false; 
     };
-  }, [isOpen, syncCart, variantIdsStr]); // ESLint is now perfectly satisfied
+  }, [isOpen, syncCart, variantIdsStr]);
 
 
   useEffect(() => {

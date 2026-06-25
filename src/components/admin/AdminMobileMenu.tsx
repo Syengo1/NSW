@@ -23,15 +23,15 @@ export function AdminMobileMenu() {
     return () => clearTimeout(timer)
   }, [])
 
-  // FIX: Robust Scroll Lock (Preserves original body styles)
+
   useEffect(() => {
     if (!isOpen) return
 
-    // Cache the original overflow property before we change it
+
     const originalStyle = window.getComputedStyle(document.body).overflow
     document.body.style.overflow = 'hidden'
 
-    // Restore the exact original style when the menu unmounts or closes
+
     return () => { 
       document.body.style.overflow = originalStyle 
     }
