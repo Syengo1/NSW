@@ -52,13 +52,13 @@ export default function Footer() {
         <p>&copy; {new Date().getFullYear()} OPFits. All rights reserved.</p>
         
         <a 
-          href="https://antonysyengo.vercel.app" 
+          href="#" 
           target="_blank" 
           className="group flex items-center gap-2 hover:text-white transition-colors relative"
         >
           <span>Designed & Built by</span>
           <span className="font-bold text-white relative">
-             SYENGO
+             KATE
              {/* Secret Underline Animation */}
              <span className="absolute -bottom-1 left-0 w-0 h-[1px] bg-gradient-to-r from-purple-500 to-pink-500 group-hover:w-full transition-all duration-500" />
           </span>
