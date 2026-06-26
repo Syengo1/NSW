@@ -5,6 +5,9 @@ import { cn, formatCurrency } from "@/lib/utils";
 import OrderActions from "./OrderActions"; 
 import OrdersToolbar from "@/components/admin/orders/OrdersToolbar";
 
+
+export const dynamic = 'force-dynamic';
+
 // --- STRICT TYPES ---
 interface OrderItemData {
   quantity: number;
