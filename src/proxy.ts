@@ -1,7 +1,7 @@
 import { type NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // This refreshes the auth token so the Server Components (AdminLayout)
   // don't kick you out.
   return await updateSession(request)
