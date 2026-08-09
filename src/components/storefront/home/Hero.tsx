@@ -1,433 +1,163 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Pause, Play, Volume2, VolumeX, WifiOff, BatteryWarning, MoveDown } from 'lucide-react';
-import Link from 'next/link';
-import Image from 'next/image';
-import { cn } from '@/lib/utils';
+import { useState, useEffect } from 'react';
+import { motion, Transition, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import FloatingImage, { HeroCardConfig } from './FloatingImage';
+import HeroText from './HeroText';
 
-// --- STRICT TYPES ---
-interface NetworkInformation extends EventTarget {
-  saveData?: boolean;
-  effectiveType?: 'slow-2g' | '2g' | '3g' | '4g';
-}
+// --- THE LAYOUT ENGINE ---
+// This factory automatically calculates the explosive 3D Z-axis transitions 
+// based solely on your starting X and Y coordinates.
+const createCard = (
+  id: string, src: string, width: number, height: number,
+  desktopStart: { x: number, y: number, rotate: number },
+  mobileStart: { x: number, y: number, rotate: number },
+  group: 1 | 2
+): HeroCardConfig => {
+  return {
+    id, src, width, height,
+    desktop: {
+      default: group === 1 
+        ? { ...desktopStart, z: 0, scale: 1, opacity: 1 } 
+        : { x: desktopStart.x * 0.2, y: desktopStart.y * 0.2, z: -600, rotate: 0, scale: 0.5, opacity: 0 },
+      flip1: group === 1
+        ? { x: desktopStart.x * 1.5, y: desktopStart.y * 1.5, z: 400, rotate: desktopStart.rotate * 2, scale: 1.2, opacity: 0 }
+        : { x: desktopStart.x * 0.5, y: desktopStart.y * 0.5, z: -300, rotate: desktopStart.rotate * 0.5, scale: 0.8, opacity: 0.5 },
+      flip2: group === 1
+        ? { x: desktopStart.x * 2, y: desktopStart.y * 2, z: 500, rotate: desktopStart.rotate * 3, scale: 1.5, opacity: 0 }
+        : { ...desktopStart, z: 0, scale: 1, opacity: 1 }
+    },
+    mobile: {
+      default: group === 1 
+        ? { ...mobileStart, z: 0, scale: 1, opacity: 1 } 
+        : { x: mobileStart.x * 0.2, y: mobileStart.y * 0.2, z: -600, rotate: 0, scale: 0.5, opacity: 0 },
+      flip1: group === 1
+        ? { x: mobileStart.x * 1.5, y: mobileStart.y * 1.5, z: 400, rotate: mobileStart.rotate * 2, scale: 1.2, opacity: 0 }
+        : { x: mobileStart.x * 0.5, y: mobileStart.y * 0.5, z: -300, rotate: mobileStart.rotate * 0.5, scale: 0.8, opacity: 0.5 },
+      flip2: group === 1
+        ? { x: mobileStart.x * 2, y: mobileStart.y * 2, z: 500, rotate: mobileStart.rotate * 3, scale: 1.5, opacity: 0 }
+        : { ...mobileStart, z: 0, scale: 1, opacity: 1 }
+    }
+  };
+};
 
-const PLAYLIST = [
-  {
-    id: 1,
-    type: 'video',
-    src: 'https://ewxf0eupwexd82yb.public.blob.vercel-storage.com/nswHero.mp4', 
-    duration: 0, 
-  },
-  {
-    id: 2,
-    type: 'image',
-    src: '/slide3.webp',
-    duration: 3000, 
-  },
-  {
-    id: 3,
-    type: 'image',
-    src: '/slide2.webp',
-    duration: 3000,
-  }
+// --- THE SANDBOX COORDINATES ---
+// Tweak the x/y values to freely position images. 0,0 is the dead center of the screen.
+const HERO_CARDS: HeroCardConfig[] = [
+  // --- GROUP 1: SOURCE THE HYPE ---
+  createCard('1', '/hero/zoro_hoodie.webp', 195, 266, 
+    { x: -340, y: -180, rotate: -6 }, { x: -90, y: -220, rotate: -4 }, 1), // Top Left
+  createCard('2', 'https://framerusercontent.com/images/8yTDdY0yf5joSqDo9rBQ9tNkWs.jpeg', 209, 294, 
+    { x: 300, y: -150, rotate: 5 }, { x: 100, y: -180, rotate: 6 }, 1), // Top Right
+  createCard('3', 'https://framerusercontent.com/images/3Qn1pE6cMC4bKEa68dyX8ocUJ4.jpeg', 258, 200, 
+    { x: -380, y: 80, rotate: -3 }, { x: -110, y: 80, rotate: -2 }, 1), // Mid Left
+  createCard('4', '/hero/OPAF1.webp', 313, 224, 
+    { x: 40, y: 220, rotate: 4 }, { x: 10, y: 240, rotate: 2 }, 1), // Bottom Mid
+  createCard('5', 'https://framerusercontent.com/images/u3F21zAhsNEOjCugJhBXDTPkqk.jpg', 238, 289, 
+    { x: 340, y: 150, rotate: -5 }, { x: 110, y: 160, rotate: -4 }, 1), // Bottom Right
+
+  // --- GROUP 2: SECURE THE FIT ---
+  createCard('6', '/hero/zoro_hoodie_back.webp', 293, 387, 
+    { x: -300, y: -160, rotate: 4 }, { x: -85, y: -170, rotate: 5 }, 2),
+  createCard('7', 'https://framerusercontent.com/images/u1kPUKaC2qqQ2wIHuJ1XUGZkW9A.jpg', 209, 294, 
+    { x: 320, y: -120, rotate: -6 }, { x: 85, y: -130, rotate: -5 }, 2),
+  createCard('8', 'https://framerusercontent.com/images/0tfyyn5MP8bPWxhdTAOayckjMAI.jpg', 258, 355, 
+    { x: -350, y: 140, rotate: 6 }, { x: -95, y: 140, rotate: 4 }, 2),
+  createCard('9', '/hero/spongebob.webp', 313, 275, 
+    { x: -30, y: 240, rotate: -4 }, { x: -10, y: 210, rotate: -3 }, 2),
+  createCard('10', 'https://framerusercontent.com/images/BSaz0fXWU2uFOAYeuZvwhgP7Rk.jpeg', 301, 375, 
+    { x: 340, y: 190, rotate: 5 }, { x: 95, y: 170, rotate: 4 }, 2),
 ];
 
-// --- HOOK: ENVIRONMENT AWARENESS ---
-function useSmartEnvironment() {
-  const [env, setEnv] = useState({ isLowPower: false, isLowData: false, isReady: false });
-
-  useEffect(() => {
-    let isLowData = false;
-    let isLowPower = false;
-
-    if (typeof navigator !== 'undefined' && 'connection' in navigator) {
-      const nav = navigator as Navigator & { connection?: NetworkInformation };
-      const conn = nav.connection;
-      if (conn?.saveData || conn?.effectiveType === '2g' || conn?.effectiveType === 'slow-2g') {
-        isLowData = true;
-      }
-    }
-
-    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    isLowPower = mediaQuery.matches;
-
-    const timer = setTimeout(() => {
-      setEnv({ isLowPower, isLowData, isReady: true });
-    }, 0);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  return env;
-}
+const transitions = {
+  transition1: { delay: 0, duration: 0.9, ease: [0.82, 0.03, 0.71, 1], type: "tween" } as Transition,
+  transition2: { delay: 0, duration: 0.6, ease: [0.82, 0.03, 0.71, 1], type: "tween" } as Transition,
+  transition3: { bounce: 0, delay: 0, duration: 0.6, type: "spring" } as Transition
+};
 
 export default function HeroSection() {
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [isMuted, setIsMuted] = useState(true);
-  const [isInView, setIsInView] = useState(true); 
+  const [variant, setVariant] = useState<'default' | 'flip1' | 'flip2'>('default');
+  const [isMobile, setIsMobile] = useState(false);
+
+  // --- MOUSE PARALLAX ENGINE ---
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
   
-  const [userOverride, setUserOverride] = useState(false); 
-  const [videoError, setVideoError] = useState(false);
+  const springConfig = { damping: 30, stiffness: 100, mass: 1.5 };
+  const rotateX = useSpring(useTransform(mouseY, [-0.5, 0.5], [5, -5]), springConfig);
+  const rotateY = useSpring(useTransform(mouseX, [-0.5, 0.5], [-5, 5]), springConfig);
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const containerRef = useRef<HTMLElement>(null);
-  const progressBarRef = useRef<HTMLDivElement>(null); 
-  const imageTimerRef = useRef<number | null>(null);
-  const videoTimerRef = useRef<number | null>(null);
-  const playPromiseRef = useRef<Promise<void> | null>(null);
-
-  const { isLowData, isLowPower, isReady } = useSmartEnvironment();
-  const activeMedia = PLAYLIST[currentIdx];
-
-  const shouldPlayVideo = activeMedia.type === 'video' 
-    && (userOverride || (!isLowData && !isLowPower))
-    && !videoError
-    && isInView; 
-  
-  const progressionType = (activeMedia.type === 'video' && shouldPlayVideo) ? 'video' : 'image';
-
-  // --- 1. INTERSECTION OBSERVER ---
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setIsInView(entry.isIntersecting),
-      { threshold: 0.1 }
-    );
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  // --- 2. PLAYBACK ENGINE ---
-  const safePlay = useCallback(async () => {
-    const video = videoRef.current;
-    if (!video || !isInView) return;
-
-    if (playPromiseRef.current) return; 
-
-    if (video.paused) {
-      try {
-        playPromiseRef.current = video.play();
-        await playPromiseRef.current;
-        setIsPlaying(true);
-      } catch (err) {
-        if ((err as Error).name === 'AbortError') return;
-        console.warn("Autoplay failed. Engaging fallback timer.", err);
-        setVideoError(true); 
-      } finally {
-        playPromiseRef.current = null;
-      }
-    }
-  }, [isInView]);
-
-  const safePause = useCallback(() => {
-    const video = videoRef.current;
-    if (video && !playPromiseRef.current && !video.paused) {
-      video.pause();
-      setIsPlaying(false);
-    }
-  }, []);
-
-  // --- 3. ZERO-RENDER PROGRESS BAR (60FPS) ---
-  const updateProgressDOM = useCallback((percentage: number) => {
-    if (progressBarRef.current) {
-      const safePct = Number.isNaN(percentage) ? 0 : Math.min(Math.max(percentage, 0), 100);
-      progressBarRef.current.style.width = `${safePct}%`;
-    }
-  }, []);
-
-  const nextSlide = useCallback(() => {
-    updateProgressDOM(0);
-    setCurrentIdx((prev) => (prev + 1) % PLAYLIST.length);
-  }, [updateProgressDOM]);
-
-  // A. 60FPS Image Progress Loop
-  useEffect(() => {
-    if (progressionType !== 'image' || !isPlaying || !isInView) {
-      if (imageTimerRef.current !== null) cancelAnimationFrame(imageTimerRef.current);
-      return;
-    }
-
-    const duration = activeMedia.duration || 5000;
-    const startTime = performance.now();
-
-    const animateImageProgress = (now: number) => {
-      const elapsed = now - startTime;
-      const pct = (elapsed / duration) * 100;
-      updateProgressDOM(pct);
-
-      if (pct >= 100) nextSlide();
-      else imageTimerRef.current = requestAnimationFrame(animateImageProgress);
-    };
-
-    imageTimerRef.current = requestAnimationFrame(animateImageProgress);
-
-    return () => {
-      if (imageTimerRef.current !== null) cancelAnimationFrame(imageTimerRef.current);
-    };
-  }, [currentIdx, isPlaying, progressionType, activeMedia.duration, isInView, nextSlide, updateProgressDOM]);
-
-  // B. 60FPS Video Progress Loop with Smart Watchdog
-  useEffect(() => {
-    if (progressionType !== 'video' || !isPlaying || !isInView) {
-      if (videoTimerRef.current !== null) cancelAnimationFrame(videoTimerRef.current);
-      return;
-    }
-
-    const MAX_STALL_TIME = 1000; // Watchdog
-    let lastTimeVideoProgressed = performance.now();
-    let lastVideoTime = videoRef.current?.currentTime || 0;
-
-    const animateVideoProgress = (now: number) => {
-      if (videoRef.current) {
-        const vid = videoRef.current;
-        const currentVideoTime = vid.currentTime;
-        const duration = vid.duration || 1;
-        const pct = (currentVideoTime / duration) * 100;
-        
-        updateProgressDOM(pct);
-
-        // 1. iOS FAILSAFE: Manually advance if we hit 99.5%
-        if (pct >= 99.5) {
-          nextSlide();
-          return; 
-        }
-
-        // 2. SMART WATCHDOG: Detects silent network stalls
-        if (currentVideoTime !== lastVideoTime) {
-          // The video is actively playing! Reset the watchdog timer.
-          lastVideoTime = currentVideoTime;
-          lastTimeVideoProgressed = now;
-        } else if (now - lastTimeVideoProgressed > MAX_STALL_TIME) {
-          // The video has been frozen at the exact same millisecond for over 5 seconds
-          console.warn("Video network stall detected. Forcing next slide to prevent deadlock.");
-          setVideoError(true);
-          nextSlide();
-          return;
-        }
-      }
-      videoTimerRef.current = requestAnimationFrame(animateVideoProgress);
-    };
-
-    videoTimerRef.current = requestAnimationFrame(animateVideoProgress);
-
-    return () => {
-      if (videoTimerRef.current !== null) cancelAnimationFrame(videoTimerRef.current);
-    };
-  }, [progressionType, isPlaying, isInView, updateProgressDOM, nextSlide]);
-
-  // Sync Engine with Viewport
-  useEffect(() => {
-    if (!isInView) {
-      safePause();
-    } else if (progressionType === 'video' && isPlaying) {
-      safePlay();
-    }
-  }, [isInView, safePause, safePlay, progressionType, isPlaying]);
-
-  useEffect(() => { setVideoError(false); }, [currentIdx]);
-
-  const scrollToContent = () => {
-    window.scrollTo({ top: window.innerHeight, behavior: 'smooth' });
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const { clientX, clientY } = e;
+    const { innerWidth, innerHeight } = window;
+    mouseX.set(clientX / innerWidth - 0.5);
+    mouseY.set(clientY / innerHeight - 0.5);
   };
 
-  const handleForcePlay = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setUserOverride(true);
-    setVideoError(false);
-    setTimeout(() => {
-      setIsPlaying(true);
-      if (videoRef.current) {
-        videoRef.current.muted = false; 
-        setIsMuted(false);
-        safePlay();
+  // --- RESPONSIVE DETECTOR ---
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // --- AUTOMATED KINETIC LOOP ---
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    
+    const runCycle = (current: string) => {
+      if (current === 'default') {
+        timeout = setTimeout(() => setVariant('flip1'), 4000);
+      } else if (current === 'flip1') {
+        timeout = setTimeout(() => setVariant('flip2'), 600); 
+      } else if (current === 'flip2') {
+        timeout = setTimeout(() => setVariant('default'), 4000);
       }
-    }, 100);
-  };
+    };
+
+    runCycle(variant);
+    return () => clearTimeout(timeout);
+  }, [variant]);
 
   return (
+    // The h-screen class ensures the Hero naturally sits below fixed transparent navigation bars
     <section 
-      ref={containerRef} 
-      className="relative h-screen supports-[height:100dvh]:h-[100dvh] w-full overflow-hidden bg-black text-white select-none"
+      onMouseMove={handleMouseMove}
+      className="relative w-full h-screen supports-[height:100dvh]:h-[100dvh] overflow-hidden bg-white dark:bg-[#050505] text-foreground select-none"
     >
       
-      {/* --- MEDIA LAYER --- */}
-      <div className="absolute inset-0 z-0 bg-neutral-900">
-        {PLAYLIST.map((media, index) => {
-          const isActive = index === currentIdx;
-
-          return (
-            <div 
-              key={media.id}
-              className={cn(
-                "absolute inset-0 transition-opacity duration-1000 ease-in-out will-change-opacity",
-                isActive ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
-              )}
-            >
-              {media.type === 'video' ? (
-                <div className="relative h-full w-full bg-black">
-                  <video
-                    ref={isActive ? videoRef : null}
-                    src={`${media.src}`} 
-                    muted={isMuted}
-                    playsInline
-                    autoPlay={isActive && shouldPlayVideo}
-                    preload={index === 0 ? "auto" : "none"}
-                    loop={false} 
-                    onError={(e) => {
-                      console.warn("Video network error, engaging fallback.", e);
-                      setVideoError(true);
-                    }}
-                    onEnded={isActive ? nextSlide : undefined}
-                    className="h-full w-full object-cover"
-                  >
-                     <track kind="captions" srcLang="en" label="English" default />
-                  </video>
-
-                  {isActive && !shouldPlayVideo && !userOverride && isReady && (
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-500">
-                      <div className="bg-black/40 backdrop-blur-md border border-white/10 p-6 rounded-2xl flex flex-col items-center text-center max-w-xs">
-                        {isLowData ? (
-                           <WifiOff size={32} className="text-white/80 mb-2" />
-                        ) : (
-                           <BatteryWarning size={32} className="text-white/80 mb-2" />
-                        )}
-                        <h3 className="text-sm font-bold uppercase tracking-widest mb-1">
-                          {isLowData ? 'Data Saver Active' : 'Power Saver Mode'}
-                        </h3>
-                        <p className="text-xs text-white/60 mb-4">
-                          Autoplay paused to save resources.
-                        </p>
-                        <button 
-                          onClick={handleForcePlay}
-                          className="flex items-center gap-2 bg-white text-black px-5 py-2 text-xs font-black uppercase tracking-widest hover:scale-105 transition-transform"
-                        >
-                          <Play size={12} fill="currentColor" />
-                          Load Video
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="relative h-full w-full overflow-hidden">
-                  <Image 
-                    src={media.src as string} 
-                    alt="OP Fits Hero Visual"
-                    fill
-                    priority={index === 0} 
-                    fetchPriority={index === 0 ? "high" : "auto"}
-                    sizes="100vw"
-                    className={cn(
-                      "object-cover transition-transform duration-[10000ms] ease-out will-change-transform",
-                      isActive && isReady ? "scale-110" : "scale-100"
-                    )}
-                  />
-                </div>
-              )}
-            </div>
-          );
-        })}
-        
-        <div 
-           className="absolute inset-0 opacity-30 pointer-events-none z-10 brightness-100 contrast-150 mix-blend-overlay" 
-           style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent z-10" />
-      </div>
-
-      {/* --- CONTENT LAYER --- */}
-      <div className="relative z-20 h-full flex flex-col items-center justify-center text-center px-4 pt-20 animate-fade-in-up mix-blend-screen pointer-events-none">
-        <h2 className="text-sm md:text-base font-bold uppercase tracking-[0.3em] text-neutral-200 [text-shadow:0_2px_8px_rgba(0,0,0,0.8)] mb-6 animate-in slide-in-from-bottom-5 duration-1000 delay-300">
-          Welcome to OP Fits
-        </h2>
-        <p className="text-3xl md:text-5xl font-black uppercase tracking-tighter max-w-3xl leading-[1.1] [text-shadow:0_4px_16px_rgba(0,0,0,0.8)] mb-6 animate-in slide-in-from-bottom-10 duration-1000 delay-500">
-          Source The Hype. <br/> Secure The Fit.
-        </p>
-        <p className="text-xs md:text-sm text-neutral-200 max-w-xl leading-relaxed [text-shadow:0_2px_8px_rgba(0,0,0,0.8)] mb-10 animate-in fade-in zoom-in duration-1000 delay-700">
-          Your ultimate destination for exclusive streetwear, authentic sneakers, and premium apparel. <br/> 
-          Sourced globally, curated locally, and delivered straight to your door.
-        </p>
-        
-        <div className="flex flex-col md:flex-row gap-4 animate-in fade-in slide-in-from-bottom-10 duration-1000 delay-1000 pointer-events-auto">
-           <Link 
-             href="/shop?sort=newest" 
-             className="group relative bg-white text-black px-8 py-4 font-black uppercase tracking-widest text-xs overflow-hidden"
-           >
-             <span className="relative z-10 group-hover:text-white transition-colors duration-300">Shop Now</span>
-             <div className="absolute inset-0 bg-black transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-300 ease-out" />
-           </Link>
-           <Link 
-             href="/explore" 
-             className="group relative border border-white text-white px-8 py-4 font-black uppercase tracking-widest text-xs hover:bg-white hover:text-black transition-all"
-           >
-             Explore
-           </Link>
-        </div>
-      </div>
-
-      {/* --- CONTROLS --- */}
-      <div className="absolute bottom-0 left-0 h-1 bg-white/10 w-full z-30">
-        <div 
-          ref={progressBarRef}
-          className="h-full bg-white shadow-[0_0_15px_white] will-change-[width]"
-          style={{ width: '0%' }} 
-        />
-      </div>
-
-      <div className="absolute bottom-8 right-8 z-30 flex items-center gap-4">
-        {!userOverride && (isLowData || isLowPower) && !videoError && isReady && (
-          <div className="text-[10px] uppercase font-bold text-white/50 border border-white/20 px-2 py-1 rounded">
-            Eco Mode
-          </div>
-        )}
-
-        {progressionType === 'video' && (
-          <button 
-            onClick={() => setIsMuted(!isMuted)}
-            aria-label={isMuted ? "Unmute video" : "Mute video"} // 🚨 ACCESSIBILITY FIX
-            className="p-2 rounded-full border border-white/20 bg-black/20 backdrop-blur-md hover:bg-white hover:text-black transition-all"
-          >
-            {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-          </button>
-        )}
-        
-        <button 
-          onClick={() => {
-            if (isPlaying) safePause();
-            else safePlay();
-            setIsPlaying(!isPlaying);
-          }}
-          aria-label={isPlaying ? "Pause presentation" : "Play presentation"} // 🚨 ACCESSIBILITY FIX
-          className="p-2 rounded-full border border-white/20 bg-black/20 backdrop-blur-md hover:bg-white hover:text-black transition-all"
-        >
-          {isPlaying ? <Pause size={16} /> : <Play size={16} />}
-        </button>
-      </div>
-
-      <button 
-        onClick={scrollToContent}
-        className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20 text-white/50 hover:text-white transition-colors animate-bounce cursor-pointer flex flex-col items-center"
+      {/* ==========================================
+          BACKGROUND LAYER: The Parallax 3D Space
+          ========================================== */}
+      <motion.div 
+        className="absolute inset-0 pointer-events-auto z-0"
+        style={{ 
+          transformStyle: 'preserve-3d',
+          perspective: 1200,
+          rotateX, 
+          rotateY  
+        }}
       >
-        <MoveDown size={32} strokeWidth={1} />
-      </button>
-
-      {/* Pagination Buttons */}
-      <div className="absolute bottom-12 left-8 z-30 flex gap-2">
-        {PLAYLIST.map((_, idx) => (
-          <button
-            key={idx}
-            aria-label={`Go to slide ${idx + 1}`} // 🚨 ACCESSIBILITY FIX
-            onClick={() => { setCurrentIdx(idx); updateProgressDOM(0); }}
-            className={cn(
-              "h-1 transition-all duration-300",
-              currentIdx === idx ? "w-8 bg-white" : "w-4 bg-white/30 hover:bg-white/60"
-            )}
+        {HERO_CARDS.map((card) => (
+          <FloatingImage 
+            key={card.id} 
+            card={card} 
+            variant={variant} 
+            isMobile={isMobile} 
+            transitions={transitions} 
           />
         ))}
-      </div>
+      </motion.div>
 
+      {/* ==========================================
+          FOREGROUND LAYER: The 3D Text Engine
+          ========================================== */}
+      {/* Added top padding so typography respects the layout bounds created by fixed headers */}
+      <div className="pt-20 w-full h-full pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+        <HeroText variant={variant} transitions={transitions} />
+      </div>
+      
     </section>
   );
 }

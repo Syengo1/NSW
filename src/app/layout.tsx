@@ -63,6 +63,9 @@ export default function RootLayout({
         {/* 🚨 PERFORMANCE FIX: Preconnect to external media servers to completely eliminate DNS and TLS handshake delays for LCP images */}
         <link rel="preconnect" href="https://wqrtjgfrjuadksaotbxj.supabase.co" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://ewxf0eupwexd82yb.public.blob.vercel-storage.com" crossOrigin="anonymous" />
+        
+        {/* CRITICAL FIX: Preconnect for the 3D Hero Framer assets */}
+        <link rel="preconnect" href="https://framerusercontent.com" crossOrigin="anonymous" />
       </head>
       
       <body 
