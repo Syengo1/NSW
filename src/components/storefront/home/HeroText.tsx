@@ -4,16 +4,15 @@ import { motion, Transition } from 'framer-motion';
 import Link from 'next/link';
 
 interface HeroTextProps {
-  activeVariant: 'default' | 'flip1' | 'flip2';
-  transitions: {
-    transition1: Transition;
-    transition2: Transition;
-    transition3: Transition;
-  };
+  activeVariant: 'scene1' | 'scene2';
+  transition: Transition;
 }
 
-// CRITICAL FIX: Replaced `variant` with `activeVariant`
-export default function HeroText({ activeVariant, transitions }: HeroTextProps) {
+export default function HeroText({ activeVariant, transition }: HeroTextProps) {
+  
+  // CRITICAL FIX: Forces the text to become fully visible instantly while the physical rotation finishes its smooth deceleration.
+  const syncTransition = { ...transition, opacity: { duration: 0.4, ease: "linear" } };
+
   return (
     <div 
       className="absolute inset-0 flex items-center justify-center pointer-events-none z-10"
@@ -21,15 +20,13 @@ export default function HeroText({ activeVariant, transitions }: HeroTextProps) 
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.7)_0%,rgba(255,255,255,0)_60%)] dark:bg-[radial-gradient(circle_at_center,rgba(0,0,0,0.7)_0%,rgba(0,0,0,0)_60%)] opacity-100" />
 
-      {/* TEXT 1 (Visible during Default state) */}
+      {/* TEXT 1 */}
       <motion.div
         variants={{
-          default: { rotateY: 0, opacity: 1, filter: 'blur(0px)', pointerEvents: 'auto', transition: transitions.transition1 },
-          // CRITICAL FIX: Added a midway 45-degree state so the text exactly mirrors the physical depth and momentum of the images
-          flip1: { rotateY: -45, opacity: 0.3, filter: 'blur(8px)', pointerEvents: 'none', transition: transitions.transition2 },
-          flip2: { rotateY: -90, opacity: 0, filter: 'blur(12px)', pointerEvents: 'none', transition: transitions.transition3 }
+          scene1: { rotateY: 0, opacity: 1, filter: 'blur(0px)', pointerEvents: 'auto', transition: syncTransition },
+          scene2: { rotateY: -90, opacity: 0, filter: 'blur(12px)', pointerEvents: 'none', transition: syncTransition }
         }}
-        initial="default"
+        initial="scene1"
         animate={activeVariant}
         className="absolute flex flex-col items-center justify-center text-center gap-7 px-4 w-full max-w-[400px]"
         style={{ 
@@ -53,15 +50,13 @@ export default function HeroText({ activeVariant, transitions }: HeroTextProps) 
         </Link>
       </motion.div>
 
-      {/* TEXT 2 (Visible during Flip 2 state) */}
+      {/* TEXT 2 */}
       <motion.div
         variants={{
-          default: { rotateY: 90, opacity: 0, filter: 'blur(12px)', pointerEvents: 'none', transition: transitions.transition1 },
-          // CRITICAL FIX: Added a midway 45-degree state so the text exactly mirrors the physical depth and momentum of the images
-          flip1: { rotateY: 45, opacity: 0.3, filter: 'blur(8px)', pointerEvents: 'none', transition: transitions.transition2 },
-          flip2: { rotateY: 0, opacity: 1, filter: 'blur(0px)', pointerEvents: 'auto', transition: transitions.transition3 }
+          scene1: { rotateY: 90, opacity: 0, filter: 'blur(12px)', pointerEvents: 'none', transition: syncTransition },
+          scene2: { rotateY: 0, opacity: 1, filter: 'blur(0px)', pointerEvents: 'auto', transition: syncTransition }
         }}
-        initial="default"
+        initial="scene1"
         animate={activeVariant}
         className="absolute flex flex-col items-center justify-center text-center gap-7 px-4 w-full max-w-[400px]"
         style={{ 

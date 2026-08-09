@@ -5,41 +5,35 @@ import { motion, Transition, useMotionValue, useSpring, useTransform } from 'fra
 import FloatingImage, { HeroCardConfig } from './FloatingImage';
 import HeroText from './HeroText';
 
-// --- THE LAYOUT ENGINE ---
+// --- STRICT TYPE DEFINITION ---
+type StartPos = { x: number; y: number; rotate: number };
+
+// --- THE HARMONIC LAYOUT ENGINE ---
 const createCard = (
   id: string, src: string, width: number, height: number,
-  desktopStart: { x: number, y: number, rotate: number },
-  mobileStart: { x: number, y: number, rotate: number },
+  desktopStart: StartPos,
+  mobileStart: StartPos,
   group: 1 | 2
 ): HeroCardConfig => {
+  
+  // CRITICAL FIX: Replaced 'any' with the strict 'StartPos' type
+  const active = (start: StartPos) => ({ ...start, z: 0, scale: 1, opacity: 1 });
+  const inactive = (start: StartPos) => ({ x: start.x * 0.6, y: start.y * 0.6, z: -200, rotate: start.rotate * 0.5, scale: 0.8, opacity: 0 });
+  const exit = (start: StartPos) => ({ x: start.x * 1.4, y: start.y * 1.4, z: 200, rotate: start.rotate * 1.5, scale: 1.2, opacity: 0 });
+
   return {
     id, src, width, height,
     desktop: {
-      default: group === 1 
-        ? { ...desktopStart, z: 0, scale: 1, opacity: 1 } 
-        : { x: desktopStart.x * 0.2, y: desktopStart.y * 0.2, z: -600, rotate: 0, scale: 0.5, opacity: 0 },
-      flip1: group === 1
-        ? { x: desktopStart.x * 1.5, y: desktopStart.y * 1.5, z: 400, rotate: desktopStart.rotate * 2, scale: 1.2, opacity: 0 }
-        : { x: desktopStart.x * 0.5, y: desktopStart.y * 0.5, z: -300, rotate: desktopStart.rotate * 0.5, scale: 0.8, opacity: 0.5 },
-      flip2: group === 1
-        ? { x: desktopStart.x * 2, y: desktopStart.y * 2, z: 500, rotate: desktopStart.rotate * 3, scale: 1.5, opacity: 0 }
-        : { ...desktopStart, z: 0, scale: 1, opacity: 1 }
+      scene1: group === 1 ? active(desktopStart) : inactive(desktopStart),
+      scene2: group === 1 ? exit(desktopStart) : active(desktopStart)
     },
     mobile: {
-      default: group === 1 
-        ? { ...mobileStart, z: 0, scale: 1, opacity: 1 } 
-        : { x: mobileStart.x * 0.2, y: mobileStart.y * 0.2, z: -600, rotate: 0, scale: 0.5, opacity: 0 },
-      flip1: group === 1
-        ? { x: mobileStart.x * 1.5, y: mobileStart.y * 1.5, z: 400, rotate: mobileStart.rotate * 2, scale: 1.2, opacity: 0 }
-        : { x: mobileStart.x * 0.5, y: mobileStart.y * 0.5, z: -300, rotate: mobileStart.rotate * 0.5, scale: 0.8, opacity: 0.5 },
-      flip2: group === 1
-        ? { x: mobileStart.x * 2, y: mobileStart.y * 2, z: 500, rotate: mobileStart.rotate * 3, scale: 1.5, opacity: 0 }
-        : { ...mobileStart, z: 0, scale: 1, opacity: 1 }
+      scene1: group === 1 ? active(mobileStart) : inactive(mobileStart),
+      scene2: group === 1 ? exit(mobileStart) : active(mobileStart)
     }
   };
 };
 
-// --- THE SANDBOX COORDINATES ---
 const HERO_CARDS: HeroCardConfig[] = [
   createCard('1', '/hero/zoro_hoodie.webp', 195, 266, { x: -340, y: -180, rotate: -6 }, { x: -90, y: -220, rotate: -4 }, 1),
   createCard('2', 'https://framerusercontent.com/images/8yTDdY0yf5joSqDo9rBQ9tNkWs.jpeg', 209, 294, { x: 300, y: -150, rotate: 5 }, { x: 100, y: -180, rotate: 6 }, 1),
@@ -54,25 +48,21 @@ const HERO_CARDS: HeroCardConfig[] = [
   createCard('10', 'https://framerusercontent.com/images/BSaz0fXWU2uFOAYeuZvwhgP7Rk.jpeg', 301, 375, { x: 340, y: 190, rotate: 5 }, { x: 95, y: 170, rotate: 4 }, 2),
 ];
 
-// --- LUXURY SMOOTH EASING CURVES ---
-const EXPLOSION_EASE: [number, number, number, number] = [0.16, 1, 0.3, 1]; 
-const SWEEP_EASE: [number, number, number, number] = [0.65, 0, 0.35, 1]; 
-
-const transitions = {
-  transition1: { duration: 1.0, ease: SWEEP_EASE, type: "tween" } as Transition, // The Rewind
-  transition2: { duration: 0.4, ease: EXPLOSION_EASE, type: "tween" } as Transition, // The Explode Out
-  transition3: { duration: 0.6, ease: EXPLOSION_EASE, type: "tween" } as Transition  // The Settle In
-};
+// --- LUXURY SMOOTH EASING CURVE ---
+// A single, beautifully tuned cubic-bezier ensures forward and backward transitions are perfectly symmetrical
+const CINEMATIC_TWEEN: Transition = { 
+  duration: 1.2, 
+  ease: [0.16, 1, 0.3, 1], 
+  type: "tween" 
+}; 
 
 export default function HeroSection() {
-  const [variant, setVariant] = useState<'default' | 'flip1' | 'flip2'>('default');
+  const [variant, setVariant] = useState<'scene1' | 'scene2'>('scene1');
   const [isMobile, setIsMobile] = useState(false);
 
-  // --- OPTIMIZED PARALLAX PHYSICS ---
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
   
-  // High damping and balanced stiffness for ultra-smooth responsiveness without jitter
   const springConfig = { damping: 25, stiffness: 80, mass: 0.8 };
   const rotateX = useSpring(useTransform(mouseY, [-0.5, 0.5], [6, -6]), springConfig);
   const rotateY = useSpring(useTransform(mouseX, [-0.5, 0.5], [-6, 6]), springConfig);
@@ -84,13 +74,6 @@ export default function HeroSection() {
     mouseY.set(clientY / innerHeight - 0.5);
   }, [mouseX, mouseY]);
 
-  // Safely resets the 3D tilt when the mouse leaves the hero section
-  const handleMouseLeave = useCallback(() => {
-    mouseX.set(0);
-    mouseY.set(0);
-  }, [mouseX, mouseY]);
-
-  // Zero-reflow breakpoint detector using matchMedia
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 768px)');
     const updateMobile = (e: MediaQueryListEvent | MediaQueryList) => setIsMobile(e.matches);
@@ -100,28 +83,18 @@ export default function HeroSection() {
     return () => mediaQuery.removeEventListener('change', updateMobile);
   }, []);
 
-  // --- AUTOMATED KINETIC LOOP ---
+  // --- FOOLPROOF KINETIC LOOP ---
+  // A clean, simple interval replaces the buggy timeout cascade.
   useEffect(() => {
-    let timeout: NodeJS.Timeout;
-    
-    const runCycle = (current: string) => {
-      if (current === 'default') {
-        timeout = setTimeout(() => setVariant('flip1'), 4000);
-      } else if (current === 'flip1') {
-        timeout = setTimeout(() => setVariant('flip2'), 400); 
-      } else if (current === 'flip2') {
-        timeout = setTimeout(() => setVariant('default'), 4000);
-      }
-    };
-
-    runCycle(variant);
-    return () => clearTimeout(timeout);
-  }, [variant]);
+    const interval = setInterval(() => {
+      setVariant(prev => prev === 'scene1' ? 'scene2' : 'scene1');
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <section 
       onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
       className="relative w-full h-screen supports-[height:100dvh]:h-[100dvh] overflow-hidden bg-white dark:bg-[#050505] text-foreground select-none"
     >
       <motion.div 
@@ -138,11 +111,10 @@ export default function HeroSection() {
         {/* --- 3D SPACE 1 --- */}
         <motion.div
           variants={{
-            default: { rotateY: 0, transition: transitions.transition1 },
-            flip1: { rotateY: -115, transition: transitions.transition2 },
-            flip2: { rotateY: -115, transition: transitions.transition3 }
+            scene1: { rotateY: 0, transition: CINEMATIC_TWEEN },
+            scene2: { rotateY: -90, transition: CINEMATIC_TWEEN }
           }}
-          initial="default"
+          initial="scene1"
           animate={variant}
           className="absolute inset-0 w-full h-full"
           style={{ 
@@ -151,18 +123,17 @@ export default function HeroSection() {
           }}
         >
           {HERO_CARDS.filter(c => Number(c.id) <= 5).map((card, idx) => (
-            <FloatingImage key={card.id} card={card} activeVariant={variant} isMobile={isMobile} priority={idx < 5} transitions={transitions} />
+            <FloatingImage key={card.id} card={card} activeVariant={variant} isMobile={isMobile} priority={idx < 5} transition={CINEMATIC_TWEEN} />
           ))}
         </motion.div>
 
         {/* --- 3D SPACE 2 --- */}
         <motion.div
           variants={{
-            default: { rotateY: -235, transition: transitions.transition1 },
-            flip1: { rotateY: -235, transition: transitions.transition2 },
-            flip2: { rotateY: -360, transition: transitions.transition3 }
+            scene1: { rotateY: 90, transition: CINEMATIC_TWEEN },
+            scene2: { rotateY: 0, transition: CINEMATIC_TWEEN }
           }}
-          initial="default"
+          initial="scene1"
           animate={variant}
           className="absolute inset-0 w-full h-full"
           style={{ 
@@ -171,13 +142,13 @@ export default function HeroSection() {
           }}
         >
           {HERO_CARDS.filter(c => Number(c.id) > 5).map((card) => (
-            <FloatingImage key={card.id} card={card} activeVariant={variant} isMobile={isMobile} transitions={transitions} />
+            <FloatingImage key={card.id} card={card} activeVariant={variant} isMobile={isMobile} transition={CINEMATIC_TWEEN} />
           ))}
         </motion.div>
       </motion.div>
 
       <div className="pt-20 w-full h-full pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-        <HeroText activeVariant={variant} transitions={transitions} />
+        <HeroText activeVariant={variant} transition={CINEMATIC_TWEEN} />
       </div>
     </section>
   );
