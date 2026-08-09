@@ -30,9 +30,15 @@ export default function HeroText({ variant, transitions }: HeroTextProps) {
         }}
         initial="default"
         animate={variant}
-        transformTemplate={({ rotateY }) => `rotateY(${rotateY})`}
         className="absolute flex flex-col items-center justify-center text-center gap-7 px-4 w-full max-w-[400px]"
-        style={{ transformStyle: 'preserve-3d', transformPerspective: 1200 }}
+        style={{ 
+          transformStyle: 'preserve-3d', 
+          transformPerspective: 1200,
+          // CRITICAL FIX: GPU Hardware Acceleration
+          willChange: 'transform, opacity',
+          backfaceVisibility: 'hidden',
+          WebkitBackfaceVisibility: 'hidden'
+        }}
       >
         <h1 className="font-semibold text-[40px] md:text-[49px] leading-[1.1em] tracking-[-0.01em] text-[#050505] dark:text-white drop-shadow-md">
           Source The <br/> Hype
@@ -57,9 +63,15 @@ export default function HeroText({ variant, transitions }: HeroTextProps) {
         }}
         initial="default"
         animate={variant}
-        transformTemplate={({ rotateY }) => `rotateY(${rotateY})`}
         className="absolute flex flex-col items-center justify-center text-center gap-7 px-4 w-full max-w-[400px]"
-        style={{ transformStyle: 'preserve-3d', transformPerspective: 1200 }}
+        style={{ 
+          transformStyle: 'preserve-3d', 
+          transformPerspective: 1200,
+          // CRITICAL FIX: GPU Hardware Acceleration
+          willChange: 'transform, opacity',
+          backfaceVisibility: 'hidden',
+          WebkitBackfaceVisibility: 'hidden'
+        }}
       >
         <h1 className="font-semibold text-[40px] md:text-[49px] leading-[1.1em] tracking-[-0.01em] text-[#050505] dark:text-white drop-shadow-md">
           Secure The <br/> Fit

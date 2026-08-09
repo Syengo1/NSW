@@ -25,6 +25,7 @@ interface FloatingImageProps {
   card: HeroCardConfig;
   variant: 'default' | 'flip1' | 'flip2';
   isMobile: boolean;
+  priority?: boolean;
   transitions: {
     transition1: Transition;
     transition2: Transition;
@@ -32,13 +33,11 @@ interface FloatingImageProps {
   };
 }
 
-export default function FloatingImage({ card, variant, isMobile, transitions }: FloatingImageProps) {
-  // Seamlessly switch between the mobile and desktop coordinate grids
+export default function FloatingImage({ card, variant, isMobile, priority = false, transitions }: FloatingImageProps) {
   const layout = isMobile ? card.mobile : card.desktop;
   
-  // Proportionally scale the images down on mobile to prevent overlap
-  const activeWidth = isMobile ? card.width * 0.65 : card.width;
-  const activeHeight = isMobile ? card.height * 0.65 : card.height;
+  const activeWidth = isMobile ? Math.round(card.width * 0.65) : card.width;
+  const activeHeight = isMobile ? Math.round(card.height * 0.65) : card.height;
 
   return (
     <motion.div
@@ -49,12 +48,11 @@ export default function FloatingImage({ card, variant, isMobile, transitions }: 
       }}
       initial="default"
       animate={variant}
-      // PREMIUM UPGRADE: Interactive Drag Physics
       drag
       dragElastic={0.1}
       whileDrag={{ scale: 1.05, zIndex: 50, cursor: 'grabbing' }}
       whileHover={{ scale: 1.02 }}
-      className="absolute shadow-2xl bg-secondary cursor-grab"
+      className="absolute shadow-2xl bg-secondary cursor-grab select-none"
       style={{
         width: activeWidth, 
         height: activeHeight,
@@ -62,22 +60,26 @@ export default function FloatingImage({ card, variant, isMobile, transitions }: 
         overflow: 'hidden', 
         borderRadius: '16px',
         transformStyle: 'preserve-3d',
-        // MATHEMATICAL ANCHOR: This locks the origin to the dead center of the screen
+        // GPU acceleration and anti-flicker properties
+        willChange: 'transform, opacity',
+        backfaceVisibility: 'hidden',
+        WebkitBackfaceVisibility: 'hidden',
         left: '50%',
         top: '50%',
         marginLeft: -(activeWidth / 2),
         marginTop: -(activeHeight / 2),
       }}
     >
-       <Image 
-         src={card.src} 
-         alt={`Hero Drop ${card.id}`} 
-         unoptimized 
-         fill 
-         sizes="(max-width: 768px) 30vw, 300px"
-         draggable={false} // Prevents default browser ghosting during Framer drag
-         className="pointer-events-none object-cover" 
-       />
+      <Image 
+        src={card.src} 
+        alt={`Hero Drop ${card.id}`} 
+        unoptimized 
+        fill 
+        priority={priority}
+        sizes="(max-width: 768px) 30vw, 300px"
+        draggable={false}
+        className="pointer-events-none object-cover" 
+      />
     </motion.div>
   );
 }
