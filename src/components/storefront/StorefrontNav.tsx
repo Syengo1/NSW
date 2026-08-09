@@ -17,7 +17,6 @@ export function StorefrontNav() {
 
   const isTransparent = pathname === '/' && !isScrolled && !isSearchOpen;
 
-  // 🚨 ESLINT FIX: Push mounting state to the end of the execution queue
   useEffect(() => {
     const timer = setTimeout(() => setMounted(true), 0);
     return () => clearTimeout(timer);
@@ -41,7 +40,6 @@ export function StorefrontNav() {
     return () => { document.body.style.overflow = 'auto'; };
   }, [isSearchOpen]);
 
-  // Prevent rendering UI until client-side hydration is confirmed
   if (!mounted) return null;
 
   return (
@@ -50,15 +48,15 @@ export function StorefrontNav() {
         className={cn(
           "fixed top-0 left-0 right-0 z-[60] transition-all duration-500 ease-in-out",
           isScrolled ? "h-16" : "h-20",
+          // CRITICAL FIX: Added a protective gradient mask to the transparent state to guarantee text readability against 3D cards
           isTransparent 
-            ? "bg-transparent border-transparent" 
-            : "bg-background/80 backdrop-blur-xl border-b border-border shadow-sm",
+            ? "bg-gradient-to-b from-background/80 via-background/40 to-transparent border-transparent" 
+            : "bg-background/80 supports-[backdrop-filter]:bg-background/60 backdrop-blur-2xl border-b border-border shadow-sm",
           isSearchOpen && "bg-background border-border" 
         )}
       >
         <DesktopNav 
           pathname={pathname} 
-          isTransparent={isTransparent} 
           isSearchOpen={isSearchOpen} 
           setIsSearchOpen={setIsSearchOpen} 
         />

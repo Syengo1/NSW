@@ -98,12 +98,12 @@ export default function HeroSection() {
     
     const runCycle = (current: string) => {
       if (current === 'default') {
-        timeout = setTimeout(() => setVariant('flip1'), 3500);
+        timeout = setTimeout(() => setVariant('flip1'), 4000);
       } else if (current === 'flip1') {
         // CRITICAL FIX: Reduced from 800ms to 300ms to instantly chain the flip
-        timeout = setTimeout(() => setVariant('flip2'), 50); 
+        timeout = setTimeout(() => setVariant('flip2'), 100); 
       } else if (current === 'flip2') {
-        timeout = setTimeout(() => setVariant('default'), 3500);
+        timeout = setTimeout(() => setVariant('default'), 4000);
       }
     };
 
