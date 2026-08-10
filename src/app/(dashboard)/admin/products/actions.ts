@@ -3,8 +3,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
 
-// --- TYPES ---
+// --- STRICT TYPES ---
 export interface VariantInput {
+  id?: string; 
   size: string;
   color: string;
   sku: string;
@@ -12,8 +13,13 @@ export interface VariantInput {
   priceDiff: number;
 }
 
+export interface ImageAsset {
+  id?: string;
+  url: string;
+  color?: string;
+}
+
 // --- SECURE CLIENT INSTANTIATION ---
-// This guarantees we bypass Row Level Security purely on the server for Admin operations
 function getAdminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,12 +28,36 @@ function getAdminClient() {
 }
 
 // ============================================================================
-// 1. CREATE NEW PRODUCT DROP
+// 1. FETCH PRODUCT FOR EDITING (PREFILL LOGIC)
 // ============================================================================
-export async function createProductDrop(
+export async function getProductForEdit(productId: string) {
+  const supabase = getAdminClient();
+  
+  const { data, error } = await supabase
+    .from('products')
+    .select(`
+      *,
+      variants (*),
+      product_images (*)
+    `)
+    .eq('id', productId)
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Failed to fetch product for editing: ${error?.message}`);
+  }
+
+  return data;
+}
+
+// ============================================================================
+// 2. UPSERT PRODUCT DROP (CREATE & COMPLETE FULL-PAGE EDIT)
+// ============================================================================
+export async function upsertProductDrop(
+  productId: string | null,
   formData: FormData,
   variants: VariantInput[],
-  imageAssets: { url: string; color?: string }[]
+  imageAssets: ImageAsset[]
 ) {
   const supabase = getAdminClient();
 
@@ -53,89 +83,150 @@ export async function createProductDrop(
     ? Math.round(parseFloat(salePriceInput as string) * 100) 
     : null;
 
-  // C. Create Parent Product Record
-  const slug = title.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '');
-  
-  const { data: product, error: productError } = await supabase
-    .from('products')
-    .insert({
-      title,
-      slug: `${slug}-${Date.now()}`, // Guarantee uniqueness
-      description,
-      base_price: basePrice,
-      sale_price: salePrice,
-      cost_price: costPrice, // Log the COGS
-      category,
-      gender,
-      status: 'active',
-      is_visible: true 
-    })
-    .select('id')
-    .single();
+  let currentProductId = productId;
 
-  if (productError || !product) {
-    throw new Error(`Product creation failed: ${productError?.message}`);
+  // C. Upsert Parent Product Record
+  if (!currentProductId) {
+    const slug = title.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '');
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .insert({
+        title,
+        slug: `${slug}-${Date.now()}`,
+        description,
+        base_price: basePrice,
+        sale_price: salePrice,
+        cost_price: costPrice,
+        category,
+        gender,
+        status: 'active',
+        is_visible: true 
+      })
+      .select('id')
+      .single();
+
+    if (productError || !product) throw new Error(`Product creation failed: ${productError?.message}`);
+    currentProductId = product.id;
+  } else {
+    const { error: productError } = await supabase
+      .from('products')
+      .update({
+        title,
+        description,
+        base_price: basePrice,
+        sale_price: salePrice,
+        cost_price: costPrice,
+        category,
+        gender
+      })
+      .eq('id', currentProductId);
+
+    if (productError) throw new Error(`Product update failed: ${productError.message}`);
   }
 
-  // D. Create Variants & Snapshot Initial Inventory
+  // D. Handle Variants & The Immutable Inventory Ledger
   if (variants.length > 0) {
-    const variantPayload = variants.map(v => ({
-      product_id: product.id,
-      size: v.size,
-      color: v.color,
-      sku: v.sku,
-      stock_quantity: v.stock,
-      price_adjustment: v.priceDiff || 0,
-      is_active: true
-    }));
-
-    // Insert variants and return their new IDs
-    const { data: insertedVariants, error: variantError } = await supabase
+    const { data: existingVariants } = await supabase
       .from('variants')
-      .insert(variantPayload)
-      .select('id, stock_quantity');
+      .select('id, stock_quantity, sku')
+      .eq('product_id', currentProductId);
 
-    if (variantError) throw new Error(`Variants failed: ${variantError.message}`);
+    const existingMap = new Map(existingVariants?.map(v => [v.id, v.stock_quantity]) || []);
+    const incomingIds = new Set(variants.map(v => v.id).filter(Boolean));
 
-    // LOGIC UPGRADE: Snapshot the initial stock to the Ledger
-    if (insertedVariants && insertedVariants.length > 0) {
-      const ledgerPayload = insertedVariants.map(v => ({
-        variant_id: v.id,
-        quantity_change: v.stock_quantity,
-        reason: 'initial_stock_creation'
-      }));
-      
-      const { error: ledgerError } = await supabase
-        .from('inventory_ledger')
-        .insert(ledgerPayload);
-        
-      if (ledgerError) console.error("Ledger Snapshot Failed:", ledgerError.message);
+    const variantsToDeactivate = existingVariants?.filter(v => !incomingIds.has(v.id)) || [];
+    if (variantsToDeactivate.length > 0) {
+      const deacIds = variantsToDeactivate.map(v => v.id);
+      await supabase.from('variants').update({ is_active: false }).in('id', deacIds);
+    }
+
+    // CRITICAL FIX: Replaced 'any[]' with the exact strict object shape required by the ledger
+    const ledgerPayload: { variant_id: string; quantity_change: number; reason: string }[] = [];
+
+    for (const v of variants) {
+      if (v.id && existingMap.has(v.id)) {
+        const oldStock = existingMap.get(v.id) || 0;
+        const delta = v.stock - oldStock; 
+
+        const { error: vErr } = await supabase
+          .from('variants')
+          .update({
+            size: v.size,
+            color: v.color,
+            sku: v.sku,
+            stock_quantity: v.stock,
+            price_adjustment: v.priceDiff || 0,
+            is_active: true
+          })
+          .eq('id', v.id);
+
+        if (vErr) throw new Error(`Variant update failed: ${vErr.message}`);
+
+        if (delta !== 0) {
+          ledgerPayload.push({
+            variant_id: v.id,
+            quantity_change: delta,
+            reason: 'admin_manual_adjustment'
+          });
+        }
+      } else {
+        const { data: newV, error: vErr } = await supabase
+          .from('variants')
+          .insert({
+            product_id: currentProductId,
+            size: v.size,
+            color: v.color,
+            sku: v.sku,
+            stock_quantity: v.stock,
+            price_adjustment: v.priceDiff || 0,
+            is_active: true
+          })
+          .select('id')
+          .single();
+
+        if (vErr || !newV) throw new Error(`Variant insert failed: ${vErr?.message}`);
+
+        if (v.stock > 0) {
+          ledgerPayload.push({
+            variant_id: newV.id,
+            quantity_change: v.stock,
+            reason: 'initial_stock_creation'
+          });
+        }
+      }
+    }
+
+    if (ledgerPayload.length > 0) {
+      const { error: ledgerError } = await supabase.from('inventory_ledger').insert(ledgerPayload);
+      if (ledgerError) console.error("Ledger Logging Failed:", ledgerError.message);
     }
   }
 
-  // E. Link Product Images
+  // E. Handle Product Images
+  await supabase.from('product_images').delete().eq('product_id', currentProductId);
+  
   if (imageAssets.length > 0) {
     const imagePayload = imageAssets.map((img, index) => ({
-      product_id: product.id,
+      product_id: currentProductId,
       url: img.url,
       color_tag: img.color || null,
       display_order: index
     }));
 
-    const { error: imageError } = await supabase
-      .from('product_images')
-      .insert(imagePayload);
-
+    const { error: imageError } = await supabase.from('product_images').insert(imagePayload);
     if (imageError) throw new Error(`Image linking failed: ${imageError.message}`);
   }
 
-  // F. Revalidate Cache (Update UI globally)
+  // F. Revalidate Cache
   revalidatePath('/admin/products');
   revalidatePath('/shop'); 
+  revalidatePath(`/product/[slug]`, 'page');
+  
+  return { success: true, productId: currentProductId };
 }
 
 // ============================================================================
-// 2. INVENTORY TABLE QUICK EDIT
+// 3. INVENTORY TABLE QUICK EDIT
 // ============================================================================
 export async function updateQuickEdit(
   type: 'product_price' | 'product_sale_price' | 'product_cost_price' | 'variant_stock', 
@@ -156,14 +247,12 @@ export async function updateQuickEdit(
       if (error) throw error;
     }
 
-    // Support updating cost price from future admin views
     if (type === 'product_cost_price' && value !== null) {
       const { error } = await supabase.from('products').update({ cost_price: Math.round(value * 100) }).eq('id', id);
       if (error) throw error;
     }
 
     if (type === 'variant_stock' && value !== null) {
-      // LOGIC UPGRADE: Calculate the stock delta so we can log it properly
       const { data: currentVariant } = await supabase
         .from('variants')
         .select('stock_quantity')
@@ -173,11 +262,9 @@ export async function updateQuickEdit(
       const currentStock = currentVariant?.stock_quantity || 0;
       const delta = value - currentStock;
 
-      // 1. Update the actual stock
       const { error: stockError } = await supabase.from('variants').update({ stock_quantity: value }).eq('id', id);
       if (stockError) throw stockError;
 
-      // 2. Log the discrepancy to the ledger if it actually changed
       if (delta !== 0) {
          const { error: logError } = await supabase.from('inventory_ledger').insert({
             variant_id: id,
@@ -197,7 +284,7 @@ export async function updateQuickEdit(
 }
 
 // ============================================================================
-// 3. TOGGLE PRODUCT GHOST MODE
+// 4. TOGGLE PRODUCT GHOST MODE
 // ============================================================================
 export async function toggleProductVisibility(id: string, currentVisibility: boolean) {
   const supabase = getAdminClient();

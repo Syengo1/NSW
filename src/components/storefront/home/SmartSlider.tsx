@@ -1,27 +1,15 @@
 'use client';
 
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useCallback } from 'react';
 import ProductCard from '@/components/storefront/ProductCard';
 import { ChevronLeft, ChevronRight, ArrowRight, LayoutGrid } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
-
-export interface SliderProduct {
-  id: string;
-  title: string;
-  slug: string;
-  base_price: number;
-  sale_price?: number | null;
-  main_image: string;
-  hover_image?: string | null;
-  category: string;
-  status: 'active' | 'draft' | 'dropping_soon' | 'archived';
-  description?: string;
-  total_stock: number;
-}
+import { motion, useScroll, useMotionValueEvent } from 'framer-motion';
+import type { DisplayProduct } from './FeaturedManager';
 
 interface SmartSliderProps {
-  products: SliderProduct[];
+  products: DisplayProduct[];
   isInfinite?: boolean;
 }
 
@@ -29,36 +17,17 @@ export default function SmartSlider({ products, isInfinite = false }: SmartSlide
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showLeft, setShowLeft] = useState(false);
   const [showRight, setShowRight] = useState(true);
-  const [progress, setProgress] = useState(0);
 
-  // --- INTELLIGENCE: DERIVE CATEGORY ---
   const primaryCategory = products[0]?.category || 'Collection';
   const viewAllLink = `/shop?category=${primaryCategory}`;
 
-  // --- LOGIC: INTELLIGENT SCROLL TRACKER ---
-  const checkScroll = useCallback(() => {
-    if (!scrollRef.current) return;
-    const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
-    
-    // 1. Toggle Button Visibility
-    setShowLeft(scrollLeft > 20); 
-    setShowRight(scrollLeft < scrollWidth - clientWidth - 20);
+  const { scrollXProgress } = useScroll({ container: scrollRef });
 
-    // 2. Calculate Progress
-    const maxScroll = scrollWidth - clientWidth;
-    if (maxScroll > 0) {
-      setProgress((scrollLeft / maxScroll) * 100);
-    }
-  }, []);
+  useMotionValueEvent(scrollXProgress, "change", (latest) => {
+    setShowLeft(latest > 0.01);
+    setShowRight(latest < 0.99);
+  });
 
-  // --- LOGIC: RESIZE & INIT ---
-  useEffect(() => {
-    checkScroll();
-    window.addEventListener('resize', checkScroll);
-    return () => window.removeEventListener('resize', checkScroll);
-  }, [products, checkScroll]);
-
-  // --- LOGIC: NAVIGATION ---
   const scroll = (direction: 'left' | 'right') => {
     if (!scrollRef.current) return;
     const scrollAmount = scrollRef.current.clientWidth * 0.75; 
@@ -68,7 +37,6 @@ export default function SmartSlider({ products, isInfinite = false }: SmartSlide
     });
   };
 
-  // --- LOGIC: KEYBOARD SUPPORT ---
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowLeft') scroll('left');
     if (e.key === 'ArrowRight') scroll('right');
@@ -76,35 +44,32 @@ export default function SmartSlider({ products, isInfinite = false }: SmartSlide
 
   return (
     <div 
-      // FIX 1: Removed 'group' from this root div so hover states don't cascade!
       className="relative focus-within:ring-0 outline-none" 
       onKeyDown={handleKeyDown}
       tabIndex={0} 
       aria-label={`${primaryCategory} Carousel`}
     >
-      {/* --- INTELLIGENCE: FADE MASKS --- */}
       <div className={cn(
-        "absolute left-0 top-0 bottom-4 w-8 z-10 bg-gradient-to-r from-background to-transparent transition-opacity duration-300 pointer-events-none",
+        "absolute left-0 top-0 bottom-4 w-8 md:w-16 z-10 bg-gradient-to-r from-background to-transparent transition-opacity duration-500 pointer-events-none",
         showLeft ? "opacity-100" : "opacity-0"
       )} />
       
       <div className={cn(
-        "absolute right-0 top-0 bottom-4 w-12 z-10 bg-gradient-to-l from-background to-transparent transition-opacity duration-300 pointer-events-none",
+        "absolute right-0 top-0 bottom-4 w-12 md:w-24 z-10 bg-gradient-to-l from-background to-transparent transition-opacity duration-500 pointer-events-none",
         showRight ? "opacity-100" : "opacity-0"
       )} />
 
-      {/* --- NAVIGATION BUTTONS (Desktop Only) --- */}
       <div className="hidden md:block pointer-events-none absolute inset-0 z-20">
         <button 
           onClick={() => scroll('left')}
           disabled={!showLeft}
           aria-label="Scroll Left"
           className={cn(
-            "pointer-events-auto absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/90 backdrop-blur-md shadow-xl border border-black/5 dark:border-white/10 rounded-full p-2.5 transition-all duration-300 ease-out hover:scale-110 active:scale-95 disabled:opacity-0",
-            showLeft ? "translate-x-0 opacity-100" : "-translate-x-4 opacity-0"
+            "pointer-events-auto absolute left-4 top-1/2 -translate-y-1/2 bg-background/80 backdrop-blur-xl shadow-xl border border-border/50 rounded-full p-3 transition-all duration-500 ease-[0.16,1,0.3,1] hover:scale-110 active:scale-95 disabled:opacity-0 disabled:-translate-x-4",
+            showLeft ? "translate-x-0 opacity-100" : "-translate-x-8 opacity-0"
           )}
         >
-          <ChevronLeft size={18} strokeWidth={2.5} />
+          <ChevronLeft size={20} strokeWidth={2} />
         </button>
 
         <button 
@@ -112,30 +77,32 @@ export default function SmartSlider({ products, isInfinite = false }: SmartSlide
           disabled={!showRight}
           aria-label="Scroll Right"
           className={cn(
-            "pointer-events-auto absolute right-4 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/90 backdrop-blur-md shadow-xl border border-black/5 dark:border-white/10 rounded-full p-2.5 transition-all duration-300 ease-out hover:scale-110 active:scale-95 disabled:opacity-0",
-            showRight ? "translate-x-0 opacity-100" : "translate-x-4 opacity-0"
+            "pointer-events-auto absolute right-4 top-1/2 -translate-y-1/2 bg-background/80 backdrop-blur-xl shadow-xl border border-border/50 rounded-full p-3 transition-all duration-500 ease-[0.16,1,0.3,1] hover:scale-110 active:scale-95 disabled:opacity-0 disabled:translate-x-4",
+            showRight ? "translate-x-0 opacity-100" : "translate-x-8 opacity-0"
           )}
         >
-          <ChevronRight size={18} strokeWidth={2.5} />
+          <ChevronRight size={20} strokeWidth={2} />
         </button>
       </div>
 
-      {/* --- SCROLL CONTAINER --- */}
       <div 
         ref={scrollRef}
-        onScroll={checkScroll}
         className={cn(
-          "flex gap-2 md:gap-4 overflow-x-auto pb-4 pt-1",
+          "flex gap-3 md:gap-5 overflow-x-auto pb-6 pt-2",
           "scrollbar-hide snap-x snap-mandatory scroll-smooth",
           "px-4 md:px-0",
           "md:pl-[max(1rem,calc((100vw-1280px)/2+1rem))]",
           "scroll-pl-4 md:scroll-pl-[max(1rem,calc((100vw-1280px)/2+1rem))]"
         )}
       >
-        {products.map((product) => (
-          <div 
-            key={product.id} 
-            className="flex-shrink-0 w-[150px] sm:w-[180px] md:w-[220px] snap-start transition-opacity duration-500"
+        {products.map((product, idx) => (
+          <motion.div 
+            key={product.display_id} // Unique ID based on color
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-50px" }}
+            transition={{ duration: 0.7, delay: idx * 0.05, ease: [0.16, 1, 0.3, 1] }}
+            className="flex-shrink-0 w-[160px] sm:w-[200px] md:w-[240px] snap-start"
           >
             <ProductCard 
               id={product.id}
@@ -143,54 +110,56 @@ export default function SmartSlider({ products, isInfinite = false }: SmartSlide
               slug={product.slug}
               price={product.base_price}
               salePrice={product.sale_price}
-              image={product.main_image}
-              hoverImage={product.hover_image} // FIX 2: Explicitly pass the hoverImage down!
+              image={product.display_image} // Passes the color-specific image
+              hoverImage={product.hover_image}
               category={product.category}
               status={product.status}
               description={product.description}
-              totalStock={product.total_stock}
+              totalStock={product.display_stock} // Passes the color-specific stock
+              color={product.display_color} // Deep-link parameter
               size="sm" 
             />
-          </div>
+          </motion.div>
         ))}
 
-        {/* --- INTELLIGENT "VIEW ALL" CARD --- */}
         {!isInfinite && (
-          <div className="flex-shrink-0 w-[140px] sm:w-[160px] md:w-[200px] snap-start flex items-center justify-center h-full aspect-[3/4.05]">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true }}
+            className="flex-shrink-0 w-[150px] sm:w-[180px] md:w-[220px] snap-start flex items-center justify-center h-full aspect-[3/4.05]"
+          >
             <Link 
               href={viewAllLink}
-              // This internal group is perfectly fine because it only controls this specific card
-              className="group flex flex-col items-center justify-center gap-2 p-4 text-center border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-xl w-full h-full hover:border-black dark:hover:border-white hover:bg-neutral-50 dark:hover:bg-white/5 transition-all duration-300"
+              className="group flex flex-col items-center justify-center gap-3 p-6 text-center border border-dashed border-border/60 rounded-2xl w-full h-full hover:border-foreground hover:bg-secondary/30 transition-all duration-500 ease-out"
             >
-              <div className="p-3 rounded-full bg-neutral-100 dark:bg-neutral-800 group-hover:scale-110 transition-transform duration-300">
-                <LayoutGrid size={20} className="text-neutral-500 group-hover:text-black dark:group-hover:text-white" />
+              <div className="p-4 rounded-full bg-secondary group-hover:scale-110 transition-transform duration-500 ease-[0.16,1,0.3,1]">
+                <LayoutGrid size={24} className="text-muted-foreground group-hover:text-foreground transition-colors" />
               </div>
               
               <div>
-                <span className="block text-[9px] font-bold uppercase tracking-widest text-neutral-400 mb-0.5">
+                <span className="block text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">
                   Explore
                 </span>
-                <span className="block text-xs font-black uppercase tracking-tight line-clamp-1">
+                <span className="block text-sm font-black uppercase tracking-tight line-clamp-1">
                   {primaryCategory}
                 </span>
               </div>
 
-              <div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest border-b border-transparent group-hover:border-black dark:group-hover:border-white transition-colors pb-0.5">
-                View All <ArrowRight size={10} className="group-hover:translate-x-1 transition-transform" />
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground group-hover:text-foreground transition-colors mt-2">
+                View All <ArrowRight size={12} className="group-hover:translate-x-1.5 transition-transform duration-300 ease-out" />
               </div>
             </Link>
-          </div>
+          </motion.div>
         )}
         
-        {/* End Spacer */}
-        <div className="w-2 md:w-[calc((100vw-1280px)/2+1rem)] flex-shrink-0" />
+        <div className="w-4 md:w-[calc((100vw-1280px)/2+1rem)] flex-shrink-0" />
       </div>
 
-      {/* --- PROGRESS BAR --- */}
-      <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-neutral-100 dark:bg-neutral-800 mx-4 md:mx-[max(1rem,calc((100vw-1280px)/2+1rem))] rounded-full overflow-hidden opacity-50">
-        <div 
-          className="h-full bg-black dark:bg-white transition-all duration-300 ease-out"
-          style={{ width: `${Math.max(5, progress)}%` }} 
+      <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-secondary mx-4 md:mx-[max(1rem,calc((100vw-1280px)/2+1rem))] rounded-full overflow-hidden">
+        <motion.div 
+          className="h-full bg-foreground origin-left will-change-transform"
+          style={{ scaleX: scrollXProgress }} 
         />
       </div>
     </div>

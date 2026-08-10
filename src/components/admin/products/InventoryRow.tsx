@@ -1,14 +1,13 @@
-// src/components/admin/products/InventoryRow.tsx
 "use client";
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { EyeOff, ImageIcon, ExternalLink, Edit2, Save, XCircle, Loader2 } from "lucide-react";
+import { EyeOff, ImageIcon, ExternalLink, Edit2, Loader2 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
-import { updateQuickEdit, toggleProductVisibility } from "@/app/(dashboard)/admin/products/actions";
+import { toggleProductVisibility } from "@/app/(dashboard)/admin/products/actions";
 import { toast } from "sonner";
-import { VariantMatrix, type EditValuesState } from "./VariantMatrix";
+import { VariantMatrix } from "./VariantMatrix";
 import type { Product, Variant } from "./InventoryTable";
 
 interface InventoryRowProps {
@@ -19,13 +18,7 @@ interface InventoryRowProps {
 
 export function InventoryRow({ product, updateProductState, flashingItems }: InventoryRowProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
   const [isPending, startTransition] = useTransition();
-
-  // 1. Added costPrice to edit state
-  const [editValues, setEditValues] = useState<EditValuesState>({
-    basePrice: 0, salePrice: '', costPrice: 0, variants: {}
-  });
 
   const totalStock = product.variants?.reduce((acc: number, v: Variant) => acc + v.stock_quantity, 0) || 0;
   const mainImage = product.product_images?.[0]?.url;
@@ -33,67 +26,12 @@ export function InventoryRow({ product, updateProductState, flashingItems }: Inv
   const isCritical = totalStock === 0;
   const isLow = totalStock > 0 && totalStock < 10;
 
-  // 2. Real-time Profit Calculations
   const activePrice = product.sale_price ? product.sale_price : product.base_price;
   const rawCost = product.cost_price || 0;
   const profitMargin = activePrice > 0 ? Math.round(((activePrice - rawCost) / activePrice) * 100) : 0;
 
   const toggleRow = () => {
-    if (isEditing) return;
     setIsExpanded(!isExpanded);
-  };
-
-  const startEditing = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsEditing(true);
-    setIsExpanded(true);
-    const variantStock: Record<string, number> = {};
-    
-    product.variants.forEach((v: Variant) => { variantStock[v.id] = v.stock_quantity });
-    
-    setEditValues({
-      basePrice: product.base_price / 100,
-      salePrice: product.sale_price ? product.sale_price / 100 : '',
-      costPrice: product.cost_price ? product.cost_price / 100 : 0,
-      variants: variantStock
-    });
-  };
-
-  const saveEdits = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    
-    const parsedSalePrice = editValues.salePrice === '' ? null : parseFloat(editValues.salePrice as string);
-    const parsedCostPrice = editValues.costPrice || 0;
-
-    // Optimistic Update
-    updateProductState(product.id, {
-      base_price: Math.round(editValues.basePrice * 100),
-      sale_price: parsedSalePrice !== null ? Math.round(parsedSalePrice * 100) : null,
-      cost_price: Math.round(parsedCostPrice * 100),
-      variants: product.variants.map((v: Variant) => ({
-        ...v,
-        stock_quantity: editValues.variants[v.id] ?? v.stock_quantity
-      }))
-    });
-
-    setIsEditing(false);
-    toast.success("Updating inventory...");
-
-    startTransition(async () => {
-      try {
-        await updateQuickEdit('product_price', product.id, editValues.basePrice);
-        await updateQuickEdit('product_sale_price', product.id, parsedSalePrice);
-        await updateQuickEdit('product_cost_price', product.id, parsedCostPrice); // Send COGS to DB
-        
-        const promises = Object.entries(editValues.variants).map(([varId, stock]) => 
-          updateQuickEdit('variant_stock', varId, stock)
-        );
-        await Promise.all(promises);
-        toast.success("Inventory synced successfully");
-      } catch {
-        toast.error("Failed to save changes");
-      }
-    });
   };
 
   const handleGhostMode = (e: React.MouseEvent) => {
@@ -128,7 +66,7 @@ export function InventoryRow({ product, updateProductState, flashingItems }: Inv
           <div className="min-w-0">
             <div className="font-bold uppercase text-sm flex items-center gap-2 truncate">
               {product.title}
-              {isOnSale && !isEditing && <span className="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded shadow-sm animate-pulse shrink-0">SALE</span>}
+              {isOnSale && <span className="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded shadow-sm animate-pulse shrink-0">SALE</span>}
             </div>
             <div className="text-[10px] text-muted-foreground font-mono truncate flex items-center gap-1">
               {product.category}
@@ -152,40 +90,8 @@ export function InventoryRow({ product, updateProductState, flashingItems }: Inv
             </div>
         </div>
 
-        {/* 3. Price & Profit (Upgraded) */}
+        {/* 3. Price & Profit */}
         <div className="col-span-2 text-right font-mono text-sm">
-          {isEditing ? (
-             <div className="flex flex-col items-end gap-1" onClick={e => e.stopPropagation()}>
-               <div className="flex items-center gap-2">
-                 <span className="text-[9px] text-muted-foreground uppercase">Cost:</span>
-                 <input 
-                   type="number" 
-                   value={editValues.costPrice}
-                   onChange={e => setEditValues({...editValues, costPrice: parseFloat(e.target.value) || 0})}
-                   className="w-16 bg-background border border-border text-right px-1.5 py-1 rounded text-xs font-bold outline-none"
-                 />
-               </div>
-               <div className="flex items-center gap-2">
-                 <span className="text-[9px] text-muted-foreground uppercase">Base:</span>
-                 <input 
-                   type="number" 
-                   value={editValues.basePrice}
-                   onChange={e => setEditValues({...editValues, basePrice: parseFloat(e.target.value) || 0})}
-                   className="w-16 bg-background border border-border text-right px-1.5 py-1 rounded text-xs font-bold outline-none"
-                 />
-               </div>
-               <div className="flex items-center gap-2">
-                 <span className="text-[9px] text-red-500 uppercase">Sale:</span>
-                 <input 
-                   type="number" 
-                   placeholder="None"
-                   value={editValues.salePrice}
-                   onChange={e => setEditValues({...editValues, salePrice: e.target.value})}
-                   className="w-16 bg-red-500/10 border border-red-500/50 text-red-600 text-right px-1.5 py-1 rounded text-xs font-bold outline-none placeholder:text-red-500/30"
-                 />
-               </div>
-             </div>
-          ) : (
              <div className="flex flex-col items-end">
                 {isOnSale ? (
                   <div>
@@ -206,46 +112,38 @@ export function InventoryRow({ product, updateProductState, flashingItems }: Inv
                   </div>
                 )}
              </div>
-          )}
         </div>
 
         {/* 4. Controls */}
         <div className="col-span-3 flex justify-end gap-2 items-center pl-4">
-            {!isEditing && (
-              <button 
-                onClick={handleGhostMode} 
-                disabled={isPending}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase border transition-all active:scale-95", 
-                  product.is_visible ? "text-emerald-600 border-emerald-500/20 hover:bg-emerald-50" : "text-neutral-500 border-neutral-500/20 hover:bg-neutral-100",
-                  isPending && "opacity-50 cursor-not-allowed"
-                )}
-              >
-                {isPending ? <Loader2 size={10} className="animate-spin" /> : <span className={cn("w-1.5 h-1.5 rounded-full shadow-sm", product.is_visible ? "bg-emerald-500" : "bg-neutral-400")} />}
-                {product.is_visible ? "Live" : "Ghost"}
-              </button>
-            )}
+            <button 
+              onClick={handleGhostMode} 
+              disabled={isPending}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase border transition-all active:scale-95", 
+                product.is_visible ? "text-emerald-600 border-emerald-500/20 hover:bg-emerald-50" : "text-neutral-500 border-neutral-500/20 hover:bg-neutral-100",
+                isPending && "opacity-50 cursor-not-allowed"
+              )}
+            >
+              {isPending ? <Loader2 size={10} className="animate-spin" /> : <span className={cn("w-1.5 h-1.5 rounded-full shadow-sm", product.is_visible ? "bg-emerald-500" : "bg-neutral-400")} />}
+              {product.is_visible ? "Live" : "Ghost"}
+            </button>
             
-            {isEditing ? (
-              <div className="flex gap-1 animate-in zoom-in-50 duration-200" onClick={e => e.stopPropagation()}>
-                <button onClick={saveEdits} className="bg-emerald-600 text-white p-2 rounded hover:bg-emerald-500 shadow-sm"><Save size={14}/></button>
-                <button onClick={() => setIsEditing(false)} className="bg-red-50 text-red-600 p-2 rounded hover:bg-red-100 border border-red-100"><XCircle size={14}/></button>
-              </div>
-            ) : (
-              <>
-                <Link href={`/product/${product.slug}`} target="_blank" onClick={e => e.stopPropagation()} className="p-2 text-muted-foreground hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"><ExternalLink size={16}/></Link>
-                <button onClick={startEditing} className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"><Edit2 size={16}/></button>
-              </>
-            )}
+            <Link href={`/product/${product.slug}`} target="_blank" onClick={e => e.stopPropagation()} className="p-2 text-muted-foreground hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"><ExternalLink size={16}/></Link>
+            
+            {/* FULL PAGE EDIT UPGRADE: Routes cleanly to the prefilled edit page to allow safe modifications */}
+            <Link href={`/admin/products/new?editId=${product.id}`} onClick={e => e.stopPropagation()} className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">
+              <Edit2 size={16}/>
+            </Link>
         </div>
       </div>
 
       {isExpanded && (
         <VariantMatrix 
           variants={product.variants} 
-          isEditing={isEditing} 
-          editValues={editValues} // Pass the extended type down
-          setEditValues={setEditValues} 
+          isEditing={false} 
+          editValues={{ basePrice: 0, salePrice: '', costPrice: 0, variants: {} }} // Fallbacks for Typescript
+          setEditValues={() => {}} 
           flashingItems={flashingItems} 
         />
       )}

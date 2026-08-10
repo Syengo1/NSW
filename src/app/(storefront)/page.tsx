@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import Hero from "@/components/storefront/home/Hero";
-import FeaturedManager from "@/components/storefront/home/FeaturedManager";
+import FeaturedManager, { Product } from "@/components/storefront/home/FeaturedManager";
 import NewsTicker from "@/components/storefront/home/NewsTicker";
 import Footer from "@/components/storefront/Footer";
 import type { Metadata } from "next";
@@ -18,37 +18,49 @@ export default async function HomePage() {
   const supabase = await createClient();
 
   // 1. FETCH ACTIVE PRODUCTS
+  // CRITICAL FIX: Added `color` to variants and `color_tag` to product_images to satisfy the Flattening Engine
   const { data: rawProducts } = await supabase
     .from('products')
     .select(`
       id, title, slug, base_price, sale_price, category, status, description, created_at, gender,
-      product_images ( url, display_order ),
-      variants ( stock_quantity )
+      product_images ( url, display_order, color_tag ),
+      variants ( stock_quantity, color )
     `)
     .eq('status', 'active')
     .eq('is_visible', true);
 
-  // 2. SMART PROCESSING
-  const products = rawProducts?.map(p => {
-    // Sort images by their display order
-    const sortedImages = p.product_images?.sort((a, b) => a.display_order - b.display_order) || [];
+  // 2. SMART PROCESSING & STRICT TYPING
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const products: Product[] = (rawProducts || []).map((p: any) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sortedImages = p.product_images?.sort((a: any, b: any) => a.display_order - b.display_order) || [];
     
     return {
-      ...p,
-      total_stock: p.variants.reduce((sum, v) => sum + v.stock_quantity, 0),
-      main_image: sortedImages[0]?.url,           // First image
-      hover_image: sortedImages[1]?.url || null,  // Second image (if it exists)
-      discountPct: p.sale_price ? ((p.base_price - p.sale_price) / p.base_price) : 0
+      id: p.id,
+      title: p.title,
+      slug: p.slug,
+      base_price: p.base_price,
+      sale_price: p.sale_price,
+      category: p.category,
+      status: p.status,
+      description: p.description || '',
+      gender: p.gender || 'unisex',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      total_stock: p.variants?.reduce((sum: number, v: any) => sum + (v.stock_quantity || 0), 0) || 0,
+      main_image: sortedImages[0]?.url || '',           
+      hover_image: sortedImages[1]?.url || null,  
+      discountPct: p.sale_price ? Math.round(((p.base_price - p.sale_price) / p.base_price) * 100) : 0,
+      product_images: sortedImages,
+      variants: p.variants || []
     };
-  }) || [];
+  });
 
   // 3. SEGMENT DATA
-  // Sort sales by highest discount first
   const saleProducts = [...products]
     .filter(p => p.sale_price && p.sale_price < p.base_price)
     .sort((a, b) => b.discountPct - a.discountPct);
 
-  // 1. DEFINE YOUR EXACT DESIRED ORDER HERE
+  // 4. INTELLIGENT CATEGORY SORTING
   const PREFERRED_ORDER = [
     "Hoodies", 
     "T-Shirts", 
@@ -57,21 +69,14 @@ export default async function HomePage() {
     "Accessories"
   ];
 
-  // 2. EXTRACT AND SORT CATEGORIES INTELLIGENTLY
   const categories = Array.from(new Set(products.map(p => p.category))).sort((a, b) => {
     const indexA = PREFERRED_ORDER.indexOf(a);
     const indexB = PREFERRED_ORDER.indexOf(b);
 
-    // If both exist in your preferred list, sort by their position in the list
     if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-    
-    // If 'a' is in the list but 'b' is not, 'a' gets priority
     if (indexA !== -1) return -1;
-    
-    // If 'b' is in the list but 'a' is not, 'b' gets priority
     if (indexB !== -1) return 1;
     
-    // If neither are in your list (e.g., you added a new category in the admin panel but forgot to add it here), fall back to alphabetical
     return a.localeCompare(b);
   });
 

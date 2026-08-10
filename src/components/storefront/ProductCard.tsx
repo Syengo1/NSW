@@ -10,7 +10,6 @@ import { useCartStore } from '@/lib/store/cart';
 import { toast } from 'sonner';
 import QuickAddModal from './QuickAddModal';
 
-// --- STRICT TYPES ---
 type CardSize = 'sm' | 'md' | 'lg';
 
 export interface ProductVariant {
@@ -33,12 +32,11 @@ interface ProductCardProps {
   status: 'active' | 'draft' | 'dropping_soon' | 'archived';
   description?: string;
   totalStock?: number;
+  color?: string | null; // NEW: Supports Deep Linking
   size?: CardSize;
   priority?: boolean;
 }
 
-// --- UTILITY: SAFE IMAGE VALIDATION ---
-// Prevents Next.js crashes if DB contains old Unsplash URLs or invalid strings
 const isValidImageUrl = (url?: string | null) => {
   if (!url) return false;
   if (url.startsWith('/')) return true; 
@@ -46,19 +44,9 @@ const isValidImageUrl = (url?: string | null) => {
 };
 
 export default function ProductCard({ 
-  id,
-  title, 
-  slug, 
-  price, 
-  salePrice,
-  image, 
-  hoverImage,
-  category, 
-  status,
-  description,
-  totalStock = 0,
-  size = 'md', 
-  priority = false
+  id, title, slug, price, salePrice, image, hoverImage,
+  category, status, description, totalStock = 0, color,
+  size = 'md', priority = false
 }: ProductCardProps) {
   const { addItem } = useCartStore(); 
   const [adding, setAdding] = useState(false);
@@ -69,7 +57,6 @@ export default function ProductCard({
   const isFetching = useRef(false); 
   const [showModal, setShowModal] = useState(false);
 
-  // --- LOGIC ENGINE ---
   const isSoldOut = totalStock === 0;
   const isLowStock = totalStock > 0 && totalStock < 5;
   const isOnSale = salePrice && (salePrice < price) && !isSoldOut;
@@ -81,46 +68,46 @@ export default function ProductCard({
   const safeImageToRender = isValidImageUrl(image) ? image : null;
   const safeHoverImage = isValidImageUrl(hoverImage) ? hoverImage : null;
 
-  // --- STYLE MAPPING ---
+  // Build the deep link so clicking the image opens the product pre-selected to this specific color
+  const productUrl = color ? `/product/${slug}?color=${encodeURIComponent(color)}` : `/product/${slug}`;
+
   const styles = {
-    sm: {
-      title: "text-xs", cat: "text-[8px]", price: "text-xs",
-      iconBox: "h-7 w-7", iconSize: 12, badge: "text-[8px] px-1.5 py-0.5", gap: "gap-1"
-    },
-    md: {
-      title: "text-sm", cat: "text-[9px]", price: "text-sm",
-      iconBox: "h-9 w-9", iconSize: 14, badge: "text-[9px] px-2.5 py-1", gap: "gap-2"
-    },
-    lg: {
-      title: "text-lg", cat: "text-xs", price: "text-lg",
-      iconBox: "h-11 w-11", iconSize: 18, badge: "text-xs px-3 py-1.5", gap: "gap-3"
-    }
+    sm: { title: "text-xs", cat: "text-[8px]", price: "text-xs", iconBox: "h-7 w-7", iconSize: 12, badge: "text-[8px] px-1.5 py-0.5", gap: "gap-1" },
+    md: { title: "text-sm", cat: "text-[9px]", price: "text-sm", iconBox: "h-9 w-9", iconSize: 14, badge: "text-[9px] px-2.5 py-1", gap: "gap-2" },
+    lg: { title: "text-lg", cat: "text-xs", price: "text-lg", iconBox: "h-11 w-11", iconSize: 18, badge: "text-xs px-3 py-1.5", gap: "gap-3" }
   }[size];
 
-  // --- SMART FETCHING ---
+  // --- SMART COLOR-AWARE FETCHING ---
+  const fetchVariants = useCallback(async () => {
+    const supabase = createClient();
+    let query = supabase
+      .from('variants')
+      .select('id, size, color, stock_quantity, price_adjustment') 
+      .eq('product_id', id)
+      .eq('is_active', true)
+      .gt('stock_quantity', 0)
+      .order('price_adjustment', { ascending: true }); 
+
+    // If this card represents a specific color, ONLY fetch sizes for this color!
+    if (color) query = query.eq('color', color);
+
+    const { data } = await query;
+    return data as ProductVariant[];
+  }, [id, color]);
+
   const prefetchVariants = useCallback(async () => {
     if (prefetchedVariants || isSoldOut || isFetching.current) return;
-    
     try {
       isFetching.current = true;
-      const supabase = createClient();
-      const { data: variants } = await supabase
-        .from('variants')
-        .select('id, size, color, stock_quantity, price_adjustment') 
-        .eq('product_id', id)
-        .eq('is_active', true)
-        .gt('stock_quantity', 0)
-        .order('price_adjustment', { ascending: true }); 
-      
-      if (variants) setPrefetchedVariants(variants as ProductVariant[]);
+      const variants = await fetchVariants();
+      if (variants) setPrefetchedVariants(variants);
     } catch (e) {
       console.error("Prefetch failed", e);
     } finally {
       isFetching.current = false;
     }
-  }, [id, isSoldOut, prefetchedVariants]);
+  }, [isSoldOut, prefetchedVariants, fetchVariants]);
 
-  // --- HANDLERS ---
   const handleQuickAdd = async (e: React.MouseEvent) => {
     e.preventDefault(); 
     e.stopPropagation();
@@ -132,15 +119,7 @@ export default function ProductCard({
       let variants = prefetchedVariants;
       
       if (!variants) {
-        const supabase = createClient();
-        const { data } = await supabase
-          .from('variants')
-          .select('id, size, color, stock_quantity, price_adjustment') 
-          .eq('product_id', id)
-          .eq('is_active', true)
-          .gt('stock_quantity', 0)
-          .order('price_adjustment', { ascending: true }); 
-        variants = data as ProductVariant[];
+        variants = await fetchVariants();
       }
 
       if (!variants || variants.length === 0) {
@@ -188,31 +167,26 @@ export default function ProductCard({
   return (
     <>
       <Link 
-        href={`/product/${slug}`} 
+        href={productUrl} 
         onMouseEnter={prefetchVariants}
         className={cn(
           "group flex flex-col h-full relative select-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-xl",
           isSoldOut && "opacity-60 grayscale-[0.5]" 
         )}
       >
-        {/* 1. IMAGE CONTAINER */}
         <div className="relative aspect-4/5 w-full overflow-hidden rounded-xl bg-secondary/20 shadow-none group-hover:shadow-2xl transition-all duration-500 ease-out isolate">
             
-          {/* Skeleton Loader */}
           {!imageLoaded && safeImageToRender && (
              <div className="absolute inset-0 bg-secondary animate-pulse z-0" />
           )}
 
           {safeImageToRender ? (
             <>
-              {/* PRIMARY IMAGE */}
               <Image 
                 src={safeImageToRender} 
                 alt={title}
                 fill
-                // 🚨 MOBILE PERFORMANCE FIX: Strictly sets 50vw for 2-column mobile grids
                 sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                // 🚨 LCP FIX: Explicitly links the Next.js priority flag to the native browser fetchPriority
                 priority={priority}
                 fetchPriority={priority ? "high" : "auto"}
                 onLoad={() => setImageLoaded(true)}
@@ -223,15 +197,12 @@ export default function ProductCard({
                 )}
               />
 
-              {/* SECONDARY HOVER IMAGE */}
               {safeHoverImage && (
                 <Image 
                   src={safeHoverImage} 
                   alt={`${title} alternate view`}
                   fill
-                  // 🚨 MOBILE PERFORMANCE FIX: Same strict 50vw mobile size
                   sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                  // 🚨 NETWORK FIX: Explicitly enforce lazy loading and async decoding
                   loading="lazy" 
                   decoding="async"
                   className={cn(
@@ -250,7 +221,6 @@ export default function ProductCard({
 
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 z-10 pointer-events-none" />
           
-          {/* Status Badges */}
           <div className={cn("absolute top-3 left-3 flex flex-col z-20 items-start", styles.gap)}>
             {isSoldOut ? (
               <span className={cn("bg-neutral-900 text-white font-black uppercase rounded-full shadow-lg tracking-widest border border-white/10", styles.badge)}>
@@ -277,19 +247,14 @@ export default function ProductCard({
             )}
           </div>
 
-          {/* ACTION BUTTONS */}
           {!isSoldOut && (
             <div className={cn(
-               // 🚨 GPU FIX: Added transform-gpu and z-30 to prevent Safari from dropping the layer during scroll
                "absolute bottom-3 right-3 flex z-30 transition-all duration-400 ease-[cubic-bezier(0.23,1,0.32,1)] transform-gpu",
                styles.gap,
-               // 🚨 INVISIBLE FIX: Moved from `md:` (Tablets) to `lg:` (Desktops). Tablets can't hover!
                "opacity-100 translate-y-0",
                "lg:opacity-0 lg:translate-y-8 lg:group-hover:translate-y-0 lg:group-hover:opacity-100"
             )}>
-              
               <div className={cn(
-                // 🚨 BLURRY GREY FIX: Removed backdrop-blur-md. Solid contrasting colors eliminate the iOS WebKit blur bug entirely.
                 "bg-white dark:bg-neutral-900 text-black dark:text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform cursor-pointer border border-border/10",
                 styles.iconBox
               )}>
@@ -308,7 +273,6 @@ export default function ProductCard({
                     : "bg-black dark:bg-white text-white dark:text-black hover:scale-110 active:scale-95"
                 )}
               >
-                {/* Extends the touchable area on mobile devices */}
                 <span className="absolute -inset-3 lg:inset-0" /> 
                 
                 {adding ? (
@@ -323,7 +287,6 @@ export default function ProductCard({
           )}
         </div>
 
-        {/* 2. DETAILS (Editorial Typography) */}
         <div className="pt-4 flex flex-col flex-1 space-y-1">
           <div className="flex justify-between items-start gap-4">
             <div className="space-y-0.5 w-full">
@@ -335,7 +298,7 @@ export default function ProductCard({
                 styles.title,
                 "group-hover:text-primary"
               )}>
-                {title}
+                {title} {color && <span className="text-muted-foreground opacity-60 ml-1">- {color}</span>}
               </h3>
             </div>
           </div>
@@ -370,8 +333,15 @@ export default function ProductCard({
       <QuickAddModal 
         isOpen={showModal} 
         onClose={() => setShowModal(false)}
-        product={{ id, title, price, salePrice, image: safeImageToRender || '', slug }} 
-        variants={prefetchedVariants || []} 
+        product={{ 
+          id, 
+          title, 
+          price, 
+          salePrice, 
+          image: safeImageToRender || '', 
+          slug,
+          preSelectedColor: color // Passes the specific flattened grid color to the modal
+        }} 
       />
     </>
   );
