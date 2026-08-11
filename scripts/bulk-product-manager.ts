@@ -58,32 +58,42 @@ const BULK_PAYLOAD: BulkProduct[] = [
     description: "Elegance and Comfortability",
     status: 'active',
     variantGroups: [
-      { color: "Black", sizes: ["40", "41", "42", "43", "44", "45"], stockPerSize: 15 },
-      { color: "White", sizes: ["40", "41", "42", "43", "44", "45"], stockPerSize: 15 },
+      { color: "Black/White", sizes: ["40", "41", "42", "43", "44", "45"], stockPerSize: 15 },
+      { color: "White/Black", sizes: ["40", "41", "42", "43", "44", "45"], stockPerSize: 15 },
+      { color: "Black/White/White", sizes: ["40", "41", "42", "43", "44", "45"], stockPerSize: 15 },
     ],
     // The script will now auto-detect these local paths, upload them, and swap the links automatically
     imageGroups: [
       { 
-        color: "Black", 
+        color: "Black/White", 
         urls: [
-          "/data/AM_Black1.avif", 
-          "/data/AM_Black2.avif", 
-          "/data/AM_Black3.avif", 
-          "/data/AM_Black4.avif"
+          "/data/AM_BW_1.avif", 
+          "/data/AM_BW_4.avif", 
+          "/data/AM_BW_2.avif", 
+          "/data/AM_BW_3.avif"
         ] 
       },
       { 
-        color: "White", 
+        color: "White/Black", 
         urls: [
-          "/data/AM_White1.avif", 
-          "/data/AM_White2.avif", 
-          "/data/AM_White3.avif", 
-          "/data/AM_White4.avif"
+          "/data/AM_WB_1.avif", 
+          "/data/AM_WB_4.avif", 
+          "/data/AM_WB_2.avif", 
+          "/data/AM_WB_3.avif"
+        ] 
+      },
+      { 
+        color: "Black/White/White", 
+        urls: [
+          "/data/AM_BWW_1.avif", 
+          "/data/AM_BWW_4.avif", 
+          "/data/AM_BWW_2.avif", 
+          "/data/AM_BWW_3.avif"
         ] 
       },
     ]
   },
-  
+
 ];
 
 // --- 3. HELPER: GET MIME TYPE ---
