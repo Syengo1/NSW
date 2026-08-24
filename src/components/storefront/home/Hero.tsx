@@ -16,7 +16,6 @@ const createCard = (
   group: 1 | 2
 ): HeroCardConfig => {
   
-  // CRITICAL FIX: Replaced 'any' with the strict 'StartPos' type[cite: 18]
   const active = (start: StartPos) => ({ ...start, z: 0, scale: 1, opacity: 1 });
   const inactive = (start: StartPos) => ({ x: start.x * 0.6, y: start.y * 0.6, z: -200, rotate: start.rotate * 0.5, scale: 0.8, opacity: 0 });
   const exit = (start: StartPos) => ({ x: start.x * 1.4, y: start.y * 1.4, z: 200, rotate: start.rotate * 1.5, scale: 1.2, opacity: 0 });
@@ -49,7 +48,6 @@ const HERO_CARDS: HeroCardConfig[] = [
 ];
 
 // --- LUXURY SMOOTH EASING CURVE ---
-// A single, beautifully tuned cubic-bezier ensures forward and backward transitions are perfectly symmetrical[cite: 18]
 const CINEMATIC_TWEEN: Transition = { 
   duration: 1.2, 
   ease: [0.16, 1, 0.3, 1], 
@@ -70,6 +68,7 @@ export default function HeroSection() {
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const { clientX, clientY } = e;
     const { innerWidth, innerHeight } = window;
+    // Bypasses React state for butter-smooth 60fps tracking
     mouseX.set(clientX / innerWidth - 0.5);
     mouseY.set(clientY / innerHeight - 0.5);
   }, [mouseX, mouseY]);
@@ -84,7 +83,6 @@ export default function HeroSection() {
   }, []);
 
   // --- FOOLPROOF KINETIC LOOP ---
-  // A clean, simple interval replaces the buggy timeout cascade.[cite: 18]
   useEffect(() => {
     const interval = setInterval(() => {
       setVariant(prev => prev === 'scene1' ? 'scene2' : 'scene1');
@@ -122,8 +120,15 @@ export default function HeroSection() {
             willChange: 'transform'
           }}
         >
-          {HERO_CARDS.filter(c => Number(c.id) <= 5).map((card, idx) => (
-            <FloatingImage key={card.id} card={card} activeVariant={variant} isMobile={isMobile} priority={idx < 5} transition={CINEMATIC_TWEEN} />
+          {HERO_CARDS.filter(c => Number(c.id) <= 5).map((card) => (
+            <FloatingImage 
+              key={card.id} 
+              card={card} 
+              activeVariant={variant} 
+              isMobile={isMobile} 
+              priority={true} 
+              transition={CINEMATIC_TWEEN} 
+            />
           ))}
         </motion.div>
 
@@ -142,7 +147,13 @@ export default function HeroSection() {
           }}
         >
           {HERO_CARDS.filter(c => Number(c.id) > 5).map((card) => (
-            <FloatingImage key={card.id} card={card} activeVariant={variant} isMobile={isMobile} transition={CINEMATIC_TWEEN} />
+            <FloatingImage 
+              key={card.id} 
+              card={card} 
+              activeVariant={variant} 
+              isMobile={isMobile} 
+              transition={CINEMATIC_TWEEN} 
+            />
           ))}
         </motion.div>
       </motion.div>

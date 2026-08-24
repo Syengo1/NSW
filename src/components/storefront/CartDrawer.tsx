@@ -144,6 +144,7 @@ export default function CartDrawer() {
           </h2>
           <button 
             onClick={closeCart} 
+            aria-label="Close cart"
             className="p-2 hover:bg-secondary hover:text-foreground text-muted-foreground rounded-full transition-colors"
           >
             <X size={20} strokeWidth={2.5} />
@@ -243,6 +244,7 @@ export default function CartDrawer() {
                         </h3>
                         <button 
                           onClick={() => removeItem(item.variantId)} 
+                          aria-label={`Remove ${item.name} from cart`}
                           className="text-muted-foreground/50 hover:text-red-500 transition-colors p-1 -mt-1 -mr-1"
                         >
                           <Trash2 size={16} />
@@ -259,6 +261,7 @@ export default function CartDrawer() {
                         <div className="flex items-center border border-border rounded-sm bg-background w-fit overflow-hidden">
                           <button 
                             onClick={() => updateQuantity(item.variantId, -1)} 
+                            aria-label="Decrease quantity"
                             className="w-7 h-7 flex items-center justify-center hover:bg-secondary transition-colors disabled:opacity-30 disabled:hover:bg-transparent" 
                             disabled={item.quantity <= 1}
                           >
@@ -267,6 +270,7 @@ export default function CartDrawer() {
                           <span className="w-8 text-center text-xs font-mono font-bold">{item.quantity}</span>
                           <button 
                             onClick={() => updateQuantity(item.variantId, 1)} 
+                            aria-label="Increase quantity"
                             className={cn(
                               "w-7 h-7 flex items-center justify-center transition-colors disabled:opacity-30", 
                               isMaxStock ? "text-muted-foreground bg-secondary/50 cursor-not-allowed" : "hover:bg-secondary"

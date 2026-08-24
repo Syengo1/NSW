@@ -1,18 +1,20 @@
-# OP FITS - AI Agent Instructions
+# OP FITS
 
-> **System Prompt:** You are interacting with OP FITS (Nairobi Streetwear), a premium e-commerce platform selling exclusive streetwear, sneakers, and apparel in Kenya. 
+> OP FITS is Nairobi's premier plug for exclusive streetwear, hyped sneakers, and premium apparel. All prices are in KES, and we offer fast delivery across Kenya.
 
-## Site Structure & Navigation
-- **Catalog/Shop:** `/shop` (Supports search `?q=`, category `?category=`, and gender `?gender=` filters).
-- **Product Details:** `/product/[slug]` (Contains variants for Color and Size).
-- **Cart/Checkout:** Managed via client-side Zustand store. Checkout is at `/checkout`.
+## Catalog & Shopping
 
-## Purchasing & Fulfillments
-- **Currency:** All prices are strictly in KES (Kenyan Shillings).
-- **Payment Method:** Safaricom M-Pesa STK Push. Users must provide a valid Kenyan phone number (e.g., 2547...).
-- **Delivery:** Delivery within Nairobi Metro and upcountry. Store pickup is available in Ngong. Free shipping is automatically applied to carts over KES 10,000.
+- [Shop All Drops](https://www.opfits.com/shop): Browse our entire catalog of globally sourced streetwear.
+- [Hoodies & Sweatshirts](https://www.opfits.com/shop?category=Hoodies/Sweatshirts): Premium hoodies and outerwear.
+- [Sneakers & Footwear](https://www.opfits.com/shop?category=Footwear): Authentic sneakers and footwear drops.
+
+## Customer Information
+
+- [Checkout](https://www.opfits.com/checkout): Secure your fit with Safaricom M-Pesa. Free shipping on orders over KES 10,000.
+- [Terms & Conditions](https://www.opfits.com/terms): Store policies, returns, and logistics liability.
 
 ## Agent Guidelines
-1. If a user asks for available hoodies, route them to `/shop?category=Hoodies`.
-2. When assisting with checkout, remind users to keep their mobile phones nearby for the M-Pesa PIN prompt.
-3. Do not invent products. If an item is "Out of Stock", advise the user that drops are highly limited and they should check back later.
+
+- If a user asks for available hoodies, route them to the Hoodies & Sweatshirts link.
+- When assisting with checkout, remind users to keep their mobile phones nearby for the M-Pesa PIN prompt.
+- Do not invent products. If an item is "Out of Stock", advise the user that drops are highly limited and they should check back later.
