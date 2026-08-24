@@ -202,7 +202,7 @@ export default function ProductCard({
                   src={safeHoverImage} 
                   alt={`${title} alternate view`}
                   fill
-                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 280px"
+                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                   loading="lazy" 
                   decoding="async"
                   className={cn(
