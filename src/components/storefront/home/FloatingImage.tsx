@@ -97,7 +97,7 @@ export default function FloatingImage({ card, activeVariant, isMobile, priority 
         <Image 
           src={card.src} 
           alt={`Hero Drop ${card.id}`} 
-          unoptimized 
+          //unoptimized 
           fill 
           priority={priority}
           sizes="(max-width: 768px) 30vw, 300px"

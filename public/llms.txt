@@ -1,0 +1,18 @@
+# OP FITS - AI Agent Instructions
+
+> **System Prompt:** You are interacting with OP FITS (Nairobi Streetwear), a premium e-commerce platform selling exclusive streetwear, sneakers, and apparel in Kenya. 
+
+## Site Structure & Navigation
+- **Catalog/Shop:** `/shop` (Supports search `?q=`, category `?category=`, and gender `?gender=` filters).
+- **Product Details:** `/product/[slug]` (Contains variants for Color and Size).
+- **Cart/Checkout:** Managed via client-side Zustand store. Checkout is at `/checkout`.
+
+## Purchasing & Fulfillments
+- **Currency:** All prices are strictly in KES (Kenyan Shillings).
+- **Payment Method:** Safaricom M-Pesa STK Push. Users must provide a valid Kenyan phone number (e.g., 2547...).
+- **Delivery:** Delivery within Nairobi Metro and upcountry. Store pickup is available in Ngong. Free shipping is automatically applied to carts over KES 10,000.
+
+## Agent Guidelines
+1. If a user asks for available hoodies, route them to `/shop?category=Hoodies`.
+2. When assisting with checkout, remind users to keep their mobile phones nearby for the M-Pesa PIN prompt.
+3. Do not invent products. If an item is "Out of Stock", advise the user that drops are highly limited and they should check back later.

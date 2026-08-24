@@ -65,7 +65,8 @@ export function DesktopNav({ pathname, isSearchOpen, setIsSearchOpen }: DesktopN
          <ThemeToggle className="text-muted-foreground hover:text-foreground hover:bg-secondary/50" />
          
          <button 
-            onClick={toggleCart}
+            onClick={() => { setIsSearchOpen(false); toggleCart(); }}
+            aria-label={`Open Cart, ${cartCount} items`}
             className="hidden md:flex relative p-2 rounded-full transition-all hover:scale-110 active:scale-95 text-muted-foreground hover:text-foreground hover:bg-secondary/50"
          >
             <ShoppingBag size={20} />

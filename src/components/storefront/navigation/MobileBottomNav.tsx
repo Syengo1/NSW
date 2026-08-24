@@ -123,10 +123,8 @@ export function MobileBottomNav({ pathname, isSearchOpen, setIsSearchOpen }: Mob
         
         {/* CART TRIGGER */}
         <button 
-           onClick={() => {
-             setIsSearchOpen(false);
-             toggleCart();
-           }}
+           onClick={() => { setIsSearchOpen(false); toggleCart(); }}
+           aria-label={`Open Cart, ${cartCount} items`}
            className="flex flex-col items-center justify-center w-full h-full text-muted-foreground hover:text-foreground active:scale-95 transition-all border-l border-border/20"
          >
             <div className="relative">
