@@ -16,7 +16,7 @@ const createCard = (
   group: 1 | 2
 ): HeroCardConfig => {
   
-  // CRITICAL FIX: Replaced 'any' with the strict 'StartPos' type
+  // CRITICAL FIX: Replaced 'any' with the strict 'StartPos' type[cite: 18]
   const active = (start: StartPos) => ({ ...start, z: 0, scale: 1, opacity: 1 });
   const inactive = (start: StartPos) => ({ x: start.x * 0.6, y: start.y * 0.6, z: -200, rotate: start.rotate * 0.5, scale: 0.8, opacity: 0 });
   const exit = (start: StartPos) => ({ x: start.x * 1.4, y: start.y * 1.4, z: 200, rotate: start.rotate * 1.5, scale: 1.2, opacity: 0 });
@@ -49,7 +49,7 @@ const HERO_CARDS: HeroCardConfig[] = [
 ];
 
 // --- LUXURY SMOOTH EASING CURVE ---
-// A single, beautifully tuned cubic-bezier ensures forward and backward transitions are perfectly symmetrical
+// A single, beautifully tuned cubic-bezier ensures forward and backward transitions are perfectly symmetrical[cite: 18]
 const CINEMATIC_TWEEN: Transition = { 
   duration: 1.2, 
   ease: [0.16, 1, 0.3, 1], 
@@ -84,7 +84,7 @@ export default function HeroSection() {
   }, []);
 
   // --- FOOLPROOF KINETIC LOOP ---
-  // A clean, simple interval replaces the buggy timeout cascade.
+  // A clean, simple interval replaces the buggy timeout cascade.[cite: 18]
   useEffect(() => {
     const interval = setInterval(() => {
       setVariant(prev => prev === 'scene1' ? 'scene2' : 'scene1');
@@ -150,6 +150,31 @@ export default function HeroSection() {
       <div className="pt-20 w-full h-full pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
         <HeroText activeVariant={variant} transition={CINEMATIC_TWEEN} />
       </div>
+
+      {/* --- PREMIUM KINETIC SCROLL INDICATOR --- */}
+      <motion.button
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 1.5, duration: 1.2 }}
+        onClick={() => {
+          // Smoothly scrolls past the hero section, leaving a 72px buffer for the sticky nav
+          window.scrollBy({ top: window.innerHeight - 72, behavior: 'smooth' });
+        }}
+        className="absolute bottom-8 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-3 pointer-events-auto group outline-none"
+        aria-label="Scroll to explore"
+      >
+        <span className="text-[9px] font-black uppercase tracking-[0.3em] text-foreground/40 group-hover:text-foreground transition-colors duration-500">
+          Scroll
+        </span>
+        <div className="w-[1px] h-12 md:h-16 bg-foreground/20 relative overflow-hidden">
+          <motion.div
+            animate={{ y: ['-100%', '300%'] }}
+            transition={{ repeat: Infinity, duration: 1.8, ease: "linear" }}
+            className="absolute top-0 left-0 w-full h-[35%] bg-foreground"
+          />
+        </div>
+      </motion.button>
+      
     </section>
   );
 }

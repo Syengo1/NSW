@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Search, ShoppingBag } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -17,6 +18,56 @@ export function MobileBottomNav({ pathname, isSearchOpen, setIsSearchOpen }: Mob
   const toggleCart = useCartStore((state) => state.toggleCart);
   const cartCount = items.reduce((acc, item) => acc + item.quantity, 0);
 
+  // --- SMART SCROLL VISIBILITY STATE ---
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    let scrollTimeout: NodeJS.Timeout;
+    let lastScrollY = window.scrollY;
+
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      const isScrollingDown = currentScrollY > lastScrollY;
+      lastScrollY = currentScrollY;
+
+      // 1. Threshold check: Hero section (approx 50vh on home, 100px elsewhere)
+      const threshold = pathname === '/' ? window.innerHeight * 0.5 : 100;
+      
+      if (currentScrollY < threshold) {
+        setIsVisible(false);
+        clearTimeout(scrollTimeout);
+        return;
+      }
+
+      // 2. Hide immediately when scrolling down
+      if (isScrollingDown) {
+        setIsVisible(false);
+      } else {
+        // Native app UX: Show immediately when scrolling up
+        setIsVisible(true);
+      }
+
+      // 3. Appear after a slight delay when scrolling stops
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        if (window.scrollY >= threshold && !isSearchOpen) {
+          setIsVisible(true);
+        }
+      }, 350); // 350ms delay feels deliberate but responsive
+    };
+
+    // Use passive: true for high-performance 60fps scrolling
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    
+    // Initial check on mount
+    handleScroll();
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollTimeout);
+    };
+  }, [pathname, isSearchOpen]);
+
   return (
     <nav 
       className={cn(
@@ -24,7 +75,9 @@ export function MobileBottomNav({ pathname, isSearchOpen, setIsSearchOpen }: Mob
         "bg-background/80 supports-[backdrop-filter]:bg-background/60 backdrop-blur-2xl border-t border-border/50",
         "pb-[env(safe-area-inset-bottom)]", 
         "shadow-[0_-5px_20px_rgba(0,0,0,0.05)]",
-        isSearchOpen && "pointer-events-none opacity-50" 
+        // --- KINETIC ANIMATION CLASSES ---
+        "transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform",
+        (!isVisible || isSearchOpen) ? "translate-y-[150%]" : "translate-y-0"
       )}
     >
       <div className="flex justify-around items-center h-16 px-1">
