@@ -104,7 +104,6 @@ export default function NewsTicker() {
             : "left-0 right-0 w-full border-t border-border/50 bg-background/90 supports-[backdrop-filter]:bg-background/70 backdrop-blur-xl"
         )}
       >
-        {/* Soft, Calming Scanline Overlay */}
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0)_50%,rgba(0,0,0,0.05)_50%)] z-[-1] bg-[length:100%_4px] pointer-events-none opacity-50 dark:opacity-20" />
 
         <div className={cn("flex items-center px-4 py-2.5 h-10 transition-all", isMinimized ? "justify-center" : "container mx-auto justify-between")}>
@@ -130,22 +129,25 @@ export default function NewsTicker() {
           {!isMinimized && (
             <motion.div 
               layout
-              className="flex-1 mx-4 overflow-hidden relative group cursor-help"
+              className="flex-1 mx-4 overflow-hidden relative group cursor-help flex justify-center"
               onMouseEnter={() => setIsHovered(true)}
               onMouseLeave={() => setIsHovered(false)}
+              // PERFORMANCE FIX: Strictly isolates this element so its internal content changes never trigger document reflows
+              style={{ contain: 'layout paint' }} 
             >
-               <div className="w-full text-center flex items-center justify-center gap-2">
-                  <ChevronRight size={12} className="text-muted-foreground animate-pulse" />
-                  <span className="text-[10px] md:text-xs font-bold text-foreground tracking-widest uppercase">
+               {/* CLS FIX: min-w guarantees the container won't shift surrounding icons as text grows */}
+               <div className="min-w-[280px] md:min-w-[420px] flex items-center justify-center gap-2 will-change-transform">
+                  <ChevronRight size={12} className="text-muted-foreground animate-pulse shrink-0" />
+                  <span className="text-[10px] md:text-xs font-bold text-foreground tracking-widest uppercase whitespace-nowrap">
                     {text}
                   </span>
                   <span className={cn(
-                    "inline-block w-1.5 h-3.5 bg-foreground align-middle",
+                    "inline-block w-1.5 h-3.5 bg-foreground align-middle shrink-0",
                     isDeleting ? "animate-none opacity-100" : "animate-[blink_1s_steps(2)_infinite]"
                   )} />
                </div>
                
-               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-background/90 text-[9px] text-muted-foreground font-bold uppercase tracking-widest backdrop-blur-sm">
+               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-background/95 text-[9px] text-muted-foreground font-bold uppercase tracking-widest z-10">
                  {"// PAUSED_FOR_READING //"}
                </div>
             </motion.div>
@@ -156,6 +158,7 @@ export default function NewsTicker() {
             <button 
               onClick={() => setIsMinimized(!isMinimized)}
               className="p-1.5 hover:bg-secondary text-muted-foreground hover:text-foreground rounded-md transition-colors active:scale-95"
+              aria-label={isMinimized ? "Maximize Feed" : "Minimize Feed"}
               title={isMinimized ? "Maximize Feed" : "Minimize Feed"}
             >
               {isMinimized ? (
@@ -172,6 +175,7 @@ export default function NewsTicker() {
               <button 
                 onClick={handleDismiss}
                 className="p-1.5 hover:bg-red-500/10 text-muted-foreground hover:text-red-500 rounded-md transition-colors active:scale-95"
+                aria-label="Dismiss Ticker"
                 title="Dismiss"
               >
                 <X size={12} />
