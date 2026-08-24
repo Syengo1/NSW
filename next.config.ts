@@ -1,6 +1,21 @@
 import type { NextConfig } from "next";
 import withPWA from "@ducanh2912/next-pwa";
 
+// 🚨 SECURITY FIX: Strict Content Security Policy
+// Defines exactly which external resources are allowed to load, blocking all malicious injections.
+const cspHeader = `
+  default-src 'self';
+  script-src 'self' 'unsafe-eval' 'unsafe-inline' https://maps.googleapis.com https://eu.posthog.com;
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  img-src 'self' blob: data: https://wqrtjgfrjuadksaotbxj.supabase.co https://ewxf0eupwexd82yb.public.blob.vercel-storage.com https://framerusercontent.com https://maps.gstatic.com https://maps.googleapis.com;
+  font-src 'self' data: https://fonts.gstatic.com;
+  connect-src 'self' ws: wss: https://wqrtjgfrjuadksaotbxj.supabase.co https://api.safaricom.co.ke https://sandbox.safaricom.co.ke https://maps.googleapis.com https://eu.posthog.com;
+  frame-src 'self';
+  object-src 'none';
+  base-uri 'self';
+  form-action 'self';
+`.replace(/\s{2,}/g, ' ').trim(); // Minifies the string to ensure it parses correctly in the browser header
+
 const nextConfig: NextConfig = {
   // 1. NETWORK FIX: Whitelists local IPs to allow Mobile/LAN testing without Turbopack blocking assets
   allowedDevOrigins: [
@@ -80,6 +95,11 @@ const nextConfig: NextConfig = {
             // Restricts access to device hardware (camera, microphone) to prevent malicious tracking
             key: 'Permissions-Policy',
             value: 'camera=(), microphone=(), geolocation=(self)',
+          },
+          {
+            // 🚨 SECURITY FIX: Injects the Content Security Policy into the response
+            key: 'Content-Security-Policy',
+            value: cspHeader,
           },
         ],
       },

@@ -26,6 +26,20 @@ interface ReceiptDownloaderProps {
   order: ReceiptOrder;
 }
 
+// 🚨 SECURITY FIX: HTML Escaper to prevent DOM-based XSS
+const escapeHTML = (str: string) => {
+  if (!str) return '';
+  return str.replace(/[&<>'"]/g, 
+    tag => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      "'": '&#39;',
+      '"': '&quot;'
+    }[tag] || tag)
+  );
+};
+
 export default function ReceiptDownloader({ order }: ReceiptDownloaderProps) {
   
   const handleDownload = () => {
@@ -37,7 +51,11 @@ export default function ReceiptDownloader({ order }: ReceiptDownloaderProps) {
     }
 
     const rawName = order.full_name || order.customer_name || "Valued Customer";
-    const firstName = rawName.split(' ')[0].toUpperCase();
+    
+    // 🚨 SECURITY FIX: Sanitize the name before injecting it into the DOM
+    const sanitizedName = escapeHTML(rawName).toUpperCase();
+    const firstName = sanitizedName.split(' ')[0];
+    
     const logoUrl = `${window.location.origin}/icon.png`;
 
     const html = `
@@ -45,7 +63,7 @@ export default function ReceiptDownloader({ order }: ReceiptDownloaderProps) {
       <html>
         <head>
           <meta charset="utf-8">
-          <title>Receipt #${order.mpesa_receipt || order.order_number}</title>
+          <title>Receipt #${escapeHTML(order.mpesa_receipt || order.order_number)}</title>
           <style>
             @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
             
@@ -124,18 +142,18 @@ export default function ReceiptDownloader({ order }: ReceiptDownloaderProps) {
             <img src="${logoUrl}" alt="OP Fits Logo" class="receipt-logo" onload="window.print();" onerror="window.print();" />
             <div class="title">OP FITS</div>
             <div class="subtitle">${new Date(order.created_at).toLocaleString('en-KE')}</div>
-            <div class="subtitle">Receipt: ${order.mpesa_receipt || order.order_number}</div>
+            <div class="subtitle">Receipt: ${escapeHTML(order.mpesa_receipt || order.order_number)}</div>
           </div>
 
           <div class="customer-info">
             PREPARED FOR:<br/>
-            <strong>${rawName.toUpperCase()}</strong>
+            <strong>${sanitizedName}</strong>
           </div>
           
           <div class="items">
             ${order.order_items.map(item => `
               <div class="row">
-                <span class="item-name">${item.quantity}x ${item.variant_name}</span>
+                <span class="item-name">${item.quantity}x ${escapeHTML(item.variant_name)}</span>
                 <span>${(item.price_at_purchase / 100).toLocaleString()}</span>
               </div>
             `).join('')}
@@ -149,7 +167,7 @@ export default function ReceiptDownloader({ order }: ReceiptDownloaderProps) {
           <div class="footer">
             <p>THANK YOU FOR SHOPPING AT OP FITS, ${firstName}.</p>
             <p>WEAR IT BOLD. SECURE THE NEXT DROP AT<br/><strong>OPFITS.COM</strong></p>
-            <p style="margin-top: 20px; font-size: 10px; color: #888;">*${order.order_number.toUpperCase()}*</p>
+            <p style="margin-top: 20px; font-size: 10px; color: #888;">*${escapeHTML(order.order_number).toUpperCase()}*</p>
           </div>
         </body>
       </html>
