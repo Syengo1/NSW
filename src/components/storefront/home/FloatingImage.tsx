@@ -95,15 +95,16 @@ export default function FloatingImage({ card, activeVariant, isMobile, priority 
         className="bg-secondary overflow-hidden" 
       >
         <Image 
-          src={card.src} 
-          alt={`Hero Drop ${card.id}`} 
-          //unoptimized 
-          fill 
-          priority={priority}
-          sizes="(max-width: 768px) 30vw, 300px"
-          draggable={false}
-          className="pointer-events-none object-cover" 
-        />
+           src={card.src} 
+           alt={`Hero Drop ${card.id}`} 
+           fill 
+           priority={priority}
+           fetchPriority={priority ? "high" : "auto"}
+           // unoptimized
+           sizes="(max-width: 768px) 30vw, 300px"
+           draggable={false}
+           className="pointer-events-none object-cover" 
+         />
       </motion.div>
     </motion.div>
   );

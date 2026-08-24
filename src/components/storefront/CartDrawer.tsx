@@ -185,7 +185,7 @@ export default function CartDrawer() {
         <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
           {items.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center space-y-6 opacity-80">
-              <div className="w-24 h-24 bg-secondary/50 rounded-full flex items-center justify-center mb-2 animate-in zoom-in duration-500">
+              <div className="w-24 h-24 bg-secondary/50 rounded-full flex items-center justify-center mb-2 animate-in zoom-in duration-500 will-change-transform">
                  <ShoppingBag size={40} className="text-muted-foreground/50" strokeWidth={1.5} />
               </div>
               <div>

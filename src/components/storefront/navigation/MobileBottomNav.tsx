@@ -30,7 +30,7 @@ export function MobileBottomNav({ pathname, isSearchOpen, setIsSearchOpen }: Mob
       const isScrollingDown = currentScrollY > lastScrollY;
       lastScrollY = currentScrollY;
 
-      // 1. Threshold check: Hero section (approx 50vh on home, 100px elsewhere)
+      // Threshold check: Hero section (approx 50vh on home, 100px elsewhere)
       const threshold = pathname === '/' ? window.innerHeight * 0.5 : 100;
       
       if (currentScrollY < threshold) {
@@ -39,27 +39,23 @@ export function MobileBottomNav({ pathname, isSearchOpen, setIsSearchOpen }: Mob
         return;
       }
 
-      // 2. Hide immediately when scrolling down
+      // Hide immediately when scrolling down, show when scrolling up
       if (isScrollingDown) {
         setIsVisible(false);
       } else {
-        // Native app UX: Show immediately when scrolling up
         setIsVisible(true);
       }
 
-      // 3. Appear after a slight delay when scrolling stops
+      // Appear after a slight delay when scrolling stops
       clearTimeout(scrollTimeout);
       scrollTimeout = setTimeout(() => {
         if (window.scrollY >= threshold && !isSearchOpen) {
           setIsVisible(true);
         }
-      }, 350); // 350ms delay feels deliberate but responsive
+      }, 350); 
     };
 
-    // Use passive: true for high-performance 60fps scrolling
     window.addEventListener('scroll', handleScroll, { passive: true });
-    
-    // Initial check on mount
     handleScroll();
 
     return () => {
@@ -75,7 +71,6 @@ export function MobileBottomNav({ pathname, isSearchOpen, setIsSearchOpen }: Mob
         "bg-background/80 supports-[backdrop-filter]:bg-background/60 backdrop-blur-2xl border-t border-border/50",
         "pb-[env(safe-area-inset-bottom)]", 
         "shadow-[0_-5px_20px_rgba(0,0,0,0.05)]",
-        // --- KINETIC ANIMATION CLASSES ---
         "transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform",
         (!isVisible || isSearchOpen) ? "translate-y-[150%]" : "translate-y-0"
       )}
@@ -88,6 +83,7 @@ export function MobileBottomNav({ pathname, isSearchOpen, setIsSearchOpen }: Mob
              setIsSearchOpen(true);
              window.scrollTo({ top: 0, behavior: 'smooth' });
            }}
+           aria-label="Open Search"
            className="flex flex-col items-center justify-center w-full h-full text-muted-foreground hover:text-foreground active:scale-95 transition-all"
          >
             <Search size={20} strokeWidth={2.5} />
@@ -103,6 +99,7 @@ export function MobileBottomNav({ pathname, isSearchOpen, setIsSearchOpen }: Mob
               key={link.href} 
               href={link.href}
               onClick={() => setIsSearchOpen(false)}
+              aria-label={`Navigate to ${link.label}`}
               className={cn(
                 "flex flex-col items-center justify-center w-full h-full space-y-1.5 active:scale-95 transition-all",
                 isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
@@ -110,7 +107,7 @@ export function MobileBottomNav({ pathname, isSearchOpen, setIsSearchOpen }: Mob
             >
               <div className="relative">
                 {isActive && (
-                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-foreground rounded-full animate-in fade-in zoom-in" />
+                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-foreground rounded-full animate-in fade-in zoom-in will-change-transform" />
                 )}
                 <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
               </div>
@@ -123,14 +120,17 @@ export function MobileBottomNav({ pathname, isSearchOpen, setIsSearchOpen }: Mob
         
         {/* CART TRIGGER */}
         <button 
-           onClick={() => { setIsSearchOpen(false); toggleCart(); }}
+           onClick={() => {
+             setIsSearchOpen(false);
+             toggleCart();
+           }}
            aria-label={`Open Cart, ${cartCount} items`}
            className="flex flex-col items-center justify-center w-full h-full text-muted-foreground hover:text-foreground active:scale-95 transition-all border-l border-border/20"
          >
             <div className="relative">
               <ShoppingBag size={20} strokeWidth={2.5} />
               {cartCount > 0 && (
-                <span className="absolute -top-2 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-[9px] font-bold text-background shadow-sm animate-in zoom-in">
+                <span className="absolute -top-2 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-[9px] font-bold text-background shadow-sm animate-in zoom-in will-change-transform">
                   {cartCount}
                 </span>
               )}
