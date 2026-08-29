@@ -1,15 +1,14 @@
-// src/components/storefront/InfiniteCanvas.tsx
 "use client";
 
-import { useEffect, useRef } from "react";
-import { motion, useAnimationFrame, useMotionValue, wrap } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { motion, useAnimationFrame, useMotionValue, wrap, AnimatePresence } from "framer-motion";
 import Card from "./Card";
 import type { ExploreItem } from "@/app/(storefront)/explore/page";
 
 const DRAG_SPEED = 1;
 const SCROLL_SPEED = 1;
 const LERP_EASE = 0.08;
-const MOMENTUM_MULTIPLIER = 180; 
+const MOMENTUM_MULTIPLIER = 250; // Increased for buttery-smooth coasting
 
 interface InfiniteCanvasProps {
   items: ExploreItem[];
@@ -18,6 +17,10 @@ interface InfiniteCanvasProps {
 export default function InfiniteCanvas({ items }: InfiniteCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const windowSize = useRef({ w: 0, h: 0 });
+
+  // --- INTERACTION TRACKING ---
+  const [hasInteracted, setHasInteracted] = useState(false);
+  const interactionTracked = useRef(false); // Prevents stale closures in the native wheel event
 
   const state = useRef({
     targetX: 0,
@@ -43,17 +46,31 @@ export default function InfiniteCanvas({ items }: InfiniteCanvasProps) {
   const smoothPointerX = useMotionValue(0.5);
   const smoothPointerY = useMotionValue(0.5);
 
-  useEffect(() => {
-    windowSize.current = { w: window.innerWidth, h: window.innerHeight };
+  const recordInteraction = () => {
+    if (!interactionTracked.current) {
+      interactionTracked.current = true;
+      setHasInteracted(true);
+    }
+  };
 
-    const handleResize = () => {
-      windowSize.current = { w: window.innerWidth, h: window.innerHeight };
+  useEffect(() => {
+    // 🚨 PHYSICS FIX: Using exact client dimensions prevents iOS Safari 100vh bugs
+    const updateSize = () => {
+      if (containerRef.current) {
+        windowSize.current = { 
+          w: containerRef.current.clientWidth, 
+          h: containerRef.current.clientHeight 
+        };
+      }
     };
     
-    window.addEventListener("resize", handleResize);
+    updateSize();
+    window.addEventListener("resize", updateSize);
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
+      recordInteraction();
+      
       state.current.targetX -= e.deltaX * SCROLL_SPEED;
       state.current.targetY -= e.deltaY * SCROLL_SPEED;
     };
@@ -62,7 +79,7 @@ export default function InfiniteCanvas({ items }: InfiniteCanvasProps) {
     if (container) container.addEventListener("wheel", handleWheel, { passive: false });
 
     return () => {
-      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("resize", updateSize);
       if (container) container.removeEventListener("wheel", handleWheel);
     };
   }, []);
@@ -70,15 +87,18 @@ export default function InfiniteCanvas({ items }: InfiniteCanvasProps) {
   useAnimationFrame(() => {
     if (windowSize.current.w === 0) return;
 
+    // Smoothly interpolate current position toward target position
     state.current.currentX += (state.current.targetX - state.current.currentX) * LERP_EASE;
     state.current.currentY += (state.current.targetY - state.current.currentY) * LERP_EASE;
 
+    // The core of the seamless infinite loop
     const wrappedX = wrap(-windowSize.current.w, 0, state.current.currentX);
     const wrappedY = wrap(-windowSize.current.h, 0, state.current.currentY);
     
     canvasX.set(wrappedX);
     canvasY.set(wrappedY);
 
+    // Smooth pointer tracking for Card 3D parallax effects
     const px = smoothPointerX.get();
     const py = smoothPointerY.get();
     smoothPointerX.set(px + (state.current.pointerX - px) * LERP_EASE);
@@ -86,6 +106,8 @@ export default function InfiniteCanvas({ items }: InfiniteCanvasProps) {
   });
 
   const handlePointerDown = (e: React.PointerEvent) => {
+    recordInteraction();
+    
     state.current.isDragging = true;
     state.current.startX = e.clientX;
     state.current.startY = e.clientY;
@@ -109,16 +131,16 @@ export default function InfiniteCanvas({ items }: InfiniteCanvasProps) {
 
     if (state.current.isDragging) {
       const now = performance.now();
-      const dt = Math.max(1, now - state.current.lastTime); 
+      const dt = now - state.current.lastTime; 
 
-      const dx = e.clientX - state.current.lastPointerX;
-      const dy = e.clientY - state.current.lastPointerY;
-      state.current.velocityX = dx / dt;
-      state.current.velocityY = dy / dt;
-
-      state.current.lastPointerX = e.clientX;
-      state.current.lastPointerY = e.clientY;
-      state.current.lastTime = now;
+      // 🚨 PHYSICS FIX: Track high-fidelity micro-velocities for momentum
+      if (dt > 0) {
+        state.current.velocityX = (e.clientX - state.current.lastPointerX) / dt;
+        state.current.velocityY = (e.clientY - state.current.lastPointerY) / dt;
+        state.current.lastPointerX = e.clientX;
+        state.current.lastPointerY = e.clientY;
+        state.current.lastTime = now;
+      }
 
       const deltaX = e.clientX - state.current.startX;
       const deltaY = e.clientY - state.current.startY;
@@ -129,9 +151,17 @@ export default function InfiniteCanvas({ items }: InfiniteCanvasProps) {
 
   const handlePointerUp = () => {
     if (state.current.isDragging) {
-      state.current.targetX += state.current.velocityX * MOMENTUM_MULTIPLIER;
-      state.current.targetY += state.current.velocityY * MOMENTUM_MULTIPLIER;
+      const now = performance.now();
+      const dt = now - state.current.lastTime;
+      
+      // 🚨 PHYSICS FIX: Only apply momentum if the user "threw" the canvas.
+      // If they held their finger still before letting go, it drops dead natively.
+      if (dt < 100) {
+        state.current.targetX += state.current.velocityX * MOMENTUM_MULTIPLIER;
+        state.current.targetY += state.current.velocityY * MOMENTUM_MULTIPLIER;
+      }
     }
+    
     state.current.isDragging = false;
     document.documentElement.classList.remove("dragging");
   };
@@ -147,21 +177,21 @@ export default function InfiniteCanvas({ items }: InfiniteCanvasProps) {
       onPointerLeave={handlePointerUp}
     >
       <motion.div
-        className="absolute top-0 left-0 w-[200vw] h-[200vh] will-change-transform"
+        className="absolute inset-0 will-change-transform"
         style={{ x: canvasX, y: canvasY }}
       >
+        {/* 🚨 GRID FIX: Percentages relative to inset-0 guarantee mathematically seamless wrapping */}
         {[
-          { id: "quad-1", x: "0vw", y: "0vh" },
-          { id: "quad-2", x: "100vw", y: "0vh" },
-          { id: "quad-3", x: "0vw", y: "100vh" },
-          { id: "quad-4", x: "100vw", y: "100vh" },
+          { id: "quad-1", x: 0, y: 0 },
+          { id: "quad-2", x: 1, y: 0 },
+          { id: "quad-3", x: 0, y: 1 },
+          { id: "quad-4", x: 1, y: 1 },
         ].map((quad) => (
           <div
             key={quad.id}
-            className="absolute top-0 left-0 w-[100vw] h-[100vh]"
-            style={{ transform: `translate(${quad.x}, ${quad.y})` }}
+            className="absolute top-0 left-0 w-full h-full"
+            style={{ transform: `translate(${quad.x * 100}%, ${quad.y * 100}%)` }}
           >
-            {/* Map over the dynamic database items payload */}
             {items.map((item) => (
               <Card 
                 key={`${quad.id}-${item.id}`} 
@@ -174,12 +204,24 @@ export default function InfiniteCanvas({ items }: InfiniteCanvasProps) {
         ))}
       </motion.div>
 
-      <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-3 mix-blend-difference z-10 pointer-events-none">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-5 h-5 fill-transparent stroke-white stroke-[1.5px] stroke-linecap-round stroke-linejoin-round">
-          <path d="M 7.5 4.583 L 9.117 2.967 C 9.605 2.479 10.395 2.479 10.883 2.967 L 12.5 4.583 M 4.583 7.5 L 2.967 9.117 C 2.479 9.605 2.479 10.395 2.967 10.883 L 4.583 12.5 M 15.417 7.5 L 17.033 9.117 C 17.521 9.605 17.521 10.395 17.033 10.883 L 15.417 12.5 M 12.5 15.417 L 10.883 17.033 C 10.395 17.521 9.605 17.521 9.117 17.033 L 7.5 15.417 M 10 3.333 L 10 10 M 10 10 L 10 16.667 M 10 10 L 3.333 10 M 10 10 L 16.667 10" />
-        </svg>
-        <span className="text-white font-mono font-medium text-xs tracking-tighter">SCROLL / DRAG</span>
-      </div>
+      <AnimatePresence>
+        {!hasInteracted && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10, filter: "blur(4px)" }}
+            transition={{ duration: 0.5 }}
+            className="absolute bottom-12 left-1/2 -translate-x-1/2 flex items-center gap-3 mix-blend-difference z-10 pointer-events-none"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-5 h-5 fill-transparent stroke-white stroke-[1.5px] stroke-linecap-round stroke-linejoin-round">
+              <path d="M 7.5 4.583 L 9.117 2.967 C 9.605 2.479 10.395 2.479 10.883 2.967 L 12.5 4.583 M 4.583 7.5 L 2.967 9.117 C 2.479 9.605 2.479 10.395 2.967 10.883 L 4.583 12.5 M 15.417 7.5 L 17.033 9.117 C 17.521 9.605 17.521 10.395 17.033 10.883 L 15.417 12.5 M 12.5 15.417 L 10.883 17.033 C 10.395 17.521 9.605 17.521 9.117 17.033 L 7.5 15.417 M 10 3.333 L 10 10 M 10 10 L 10 16.667 M 10 10 L 3.333 10 M 10 10 L 16.667 10" />
+            </svg>
+            <span className="text-white font-mono font-bold text-xs tracking-[0.2em] uppercase">
+              Scroll to Explore
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
