@@ -18,38 +18,45 @@ export default function StorefrontLayout({
 }) {
   const pathname = usePathname();
   const isHomePage = pathname === '/';
+  // 🚨 FIX: We isolate the physics lock exclusively to the canvas route
+  const isExplorePage = pathname === '/explore';
 
   return (
-    /* 1. STATE ORCHESTRATION: Wrap the storefront in the Wallet Context */
     <WalletProvider>
-      <div className="min-h-screen relative flex flex-col bg-background selection:bg-foreground selection:text-background">
+      <div 
+        className={cn(
+          "min-h-screen relative flex flex-col bg-background selection:bg-foreground selection:text-background",
+          // The overflow lock is now safely applied ONLY to the explore page
+          isExplorePage && "h-[100dvh] overflow-hidden"
+        )}
+      >
         
-        {/* 2. ENHANCED UI: The Desktop Laser Scrollbar */}
-        <ScrollProgress />
+        {/* Hide the laser scrollbar on the canvas since it doesn't scroll vertically */}
+        {!isExplorePage && <ScrollProgress />}
         
-        {/* 3. NAVIGATION (Fixed on top of everything) */}
+        {/* NAVIGATION */}
         <StorefrontNav />
 
-        {/* 4. MAIN CONTENT AREA 
-            - Mobile: Always add 'pb-20' to clear the fixed Bottom Nav.
-            - Desktop: If Home -> 'pt-0' (Hero slides BEHIND navbar).
-            - Desktop: If Other -> 'pt-16' or 'pt-20' (Content pushed BELOW navbar).
-            - Added 'flex flex-col' to ensure inner pages can stretch full height if needed.
-        */}
+        {/* MAIN CONTENT AREA */}
         <main 
           className={cn(
             "flex-1 w-full flex flex-col transition-[padding] duration-500 ease-[cubic-bezier(0.23,1,0.32,1)]",
-            "pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0", 
-            isHomePage ? "pt-0" : "pt-20 md:pt-24" 
+            // 1. If Canvas: Strip all padding so coordinates map 1:1 to the screen edges
+            isExplorePage && "p-0",
+            
+            // 2. If Normal Page: Restore standard mobile bottom padding
+            !isExplorePage && "pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0",
+            
+            // 3. If Home Page: Hero slides behind navbar (pt-0). Otherwise, push content below nav.
+            !isExplorePage && (isHomePage ? "pt-0" : "pt-20 md:pt-24") 
           )}
         >
           {children}
         </main>
 
-        {/* 5. OVERLAYS: Cart & Notifications */}
+        {/* OVERLAYS & TOASTS */}
         <CartDrawer />
         
-        {/* TOASTER: Essential for the checkout errors/success messages to render globally */}
         <Toaster 
           richColors 
           position="top-center" 

@@ -3,18 +3,19 @@
 > OP FITS is Nairobi's premier plug for exclusive streetwear, hyped sneakers, and premium apparel. All prices are in KES, and we offer fast delivery across Kenya.
 
 ## Catalog & Shopping
-
 - [Shop All Drops](https://www.opfits.com/shop): Browse our entire catalog of globally sourced streetwear.
 - [Hoodies & Sweatshirts](https://www.opfits.com/shop?category=Hoodies/Sweatshirts): Premium hoodies and outerwear.
 - [Sneakers & Footwear](https://www.opfits.com/shop?category=Footwear): Authentic sneakers and footwear drops.
 
-## Customer Information
+## Culture & Lookbooks
+- [Explore](https://www.opfits.com/explore): An interactive, infinite canvas showcasing our visual lookbooks, editorial shots, and brand culture.
 
+## Customer Information
 - [Checkout](https://www.opfits.com/checkout): Secure your fit with Safaricom M-Pesa. Free shipping on orders over KES 10,000.
 - [Terms & Conditions](https://www.opfits.com/terms): Store policies, returns, and logistics liability.
 
 ## Agent Guidelines
-
 - If a user asks for available hoodies, route them to the Hoodies & Sweatshirts link.
+- If a user wants to learn about the brand's aesthetic or view galleries, route them to Explore.
 - When assisting with checkout, remind users to keep their mobile phones nearby for the M-Pesa PIN prompt.
 - Do not invent products. If an item is "Out of Stock", advise the user that drops are highly limited and they should check back later.

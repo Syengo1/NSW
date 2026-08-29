@@ -1,72 +1,98 @@
-import Link from 'next/link';
-import { Compass, ArrowLeft, Sparkles } from 'lucide-react';
-//import { cn } from '@/lib/utils';
+// src/app/(storefront)/explore/page.tsx
+import { createClient } from '@/lib/supabase/server';
+import InfiniteCanvas from '@/components/storefront/InfiniteCanvas';
+
+export const revalidate = 60; // Cache on the Edge for 60 seconds
 
 export const metadata = {
-  title: "Explore | Coming Soon",
-  description: "Curated lookbooks, community stories, and the culture behind OP Fits.",
+  title: 'Explore Drops | OP Fits',
+  description: 'Interactive 3D exploration of our latest streetwear drops.',
 };
 
-export default function ExplorePlaceholderPage() {
+// We extract the perfect mathematical scatter positions from the original design.
+// If the DB has more items than slots, the modulo operator (%) loops back through them.
+const CANVAS_SLOTS = [
+  { width: 244, top: "46%", left: "59%", parallaxEase: 0.6 },
+  { width: 212, top: "2%", left: "50%", parallaxEase: 0.8 },
+  { width: 273, top: "61%", left: "72%", parallaxEase: 0.5 },
+  { width: 238, top: "52%", left: "91%", parallaxEase: 0.9 },
+  { width: 162, top: "12%", left: "21%", parallaxEase: 0.7 },
+  { width: 143, top: "65%", left: "31%", parallaxEase: 0.4 },
+  { width: 256, top: "81%", left: "19%", parallaxEase: 0.85 },
+  { width: 174, top: "34%", left: "3%", parallaxEase: 0.55 },
+  { width: 114, top: "24%", left: "83%", parallaxEase: 0.75 },
+  { width: 220, top: "15%", left: "75%", parallaxEase: 0.65 },
+  { width: 190, top: "85%", left: "45%", parallaxEase: 0.8 },
+  { width: 280, top: "40%", left: "15%", parallaxEase: 0.5 },
+];
+
+export interface ExploreItem {
+  id: string;
+  slug: string;
+  title: string;
+  color: string;
+  description: string;
+  year: string;
+  image: string;
+  layout: { width: number; top: string; left: string; parallaxEase: number };
+}
+
+export default async function ExplorePage() {
+  const supabase = await createClient();
+
+  // 1. Fetch Active Products with their Images and Variants
+  const { data: products } = await supabase
+    .from('products')
+    .select(`
+      id, title, slug, category, created_at,
+      product_images ( url, display_order, color_tag ),
+      variants ( color )
+    `)
+    .eq('status', 'active')
+    .eq('is_visible', true);
+
+  const exploreItems: ExploreItem[] = [];
+  let slotIndex = 0;
+
+  // 2. The Flattening Engine: Create a card for EVERY color
+  if (products) {
+    products.forEach((p) => {
+      // Extract unique colors for this product
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const uniqueColors = Array.from(new Set(p.variants.map((v: any) => v.color).filter(Boolean)));
+
+      uniqueColors.forEach((color) => {
+        // Find the image that matches this variant's color_tag, fallback to the first image
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const colorImg = p.product_images.find((img: any) => img.color_tag?.toLowerCase() === color.toLowerCase()) 
+                         || p.product_images[0];
+
+        if (!colorImg) return;
+
+        // Assign a physical layout slot
+        const layout = CANVAS_SLOTS[slotIndex % CANVAS_SLOTS.length];
+        slotIndex++;
+
+        exploreItems.push({
+          id: `${p.id}-${color}`,
+          slug: p.slug,
+          title: p.title,
+          color: color as string,
+          description: p.category, // e.g., "Hoodies", "Footwear"
+          year: new Date(p.created_at).getFullYear().toString(),
+          image: colorImg.url,
+          layout,
+        });
+      });
+    });
+  }
+
+  // Fallback to prevent crashes if DB is empty
+  if (exploreItems.length === 0) return null; 
+
   return (
-    <div className="relative min-h-[85dvh] w-full flex flex-col items-center justify-center overflow-hidden bg-black text-white selection:bg-white selection:text-black">
-      
-      {/* --- BACKGROUND LAYER --- */}
-      {/* 1. Slow Breathing Gradient */}
-      <div className="absolute inset-0 z-0 opacity-40">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,_rgba(50,50,50,1),_rgba(0,0,0,1))] animate-pulse duration-[8000ms]" />
-      </div>
-
-      {/* 2. The 200-byte Procedural Noise Overlay */}
-      <div 
-         className="absolute inset-0 opacity-30 pointer-events-none z-10 mix-blend-overlay" 
-         style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }}
-      />
-
-      {/* --- CONTENT LAYER --- */}
-      <div className="relative z-20 flex flex-col items-center text-center px-6 max-w-2xl mx-auto">
-        
-        {/* Floating Icon */}
-        <div className="mb-8 relative flex items-center justify-center animate-in fade-in zoom-in duration-1000">
-           <div className="absolute inset-0 bg-white/10 blur-2xl rounded-full animate-pulse duration-3000" />
-           <div className="h-20 w-20 border border-white/20 bg-white/5 backdrop-blur-md rounded-full flex items-center justify-center shadow-2xl relative">
-             <Compass size={32} strokeWidth={1} className="text-white/80 animate-[spin_20s_linear_infinite]" />
-             <Sparkles size={14} className="absolute top-4 right-4 text-white/40" />
-           </div>
-        </div>
-
-        {/* Typography */}
-        <h1 className="text-xs md:text-sm font-bold uppercase tracking-[0.4em] text-white/50 mb-4 animate-in slide-in-from-bottom-5 duration-1000 delay-150">
-          Editorial & Culture
-        </h1>
-        
-        <h2 className="text-4xl md:text-6xl font-black uppercase tracking-tighter leading-tight mb-6 animate-in slide-in-from-bottom-8 duration-1000 delay-300">
-          Exploring <br /> The Vision.
-        </h2>
-        
-        <p className="text-sm text-white/60 leading-relaxed mb-10 max-w-md animate-in fade-in duration-1000 delay-500">
-          We are currently curating lookbooks, community stories, and the creative blueprint behind our collections. The culture is loading.
-        </p>
-
-        {/* Actions */}
-        <div className="flex flex-col sm:flex-row items-center gap-4 animate-in slide-in-from-bottom-8 fade-in duration-1000 delay-700">
-          <Link 
-            href="/shop"
-            className="group flex items-center gap-2 bg-white text-black px-8 py-4 text-xs font-black uppercase tracking-widest hover:scale-105 transition-transform"
-          >
-            <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
-            Back to Shop
-          </Link>
-          
-          <button 
-            disabled
-            className="px-8 py-4 text-xs font-bold uppercase tracking-widest text-white/40 border border-white/10 cursor-not-allowed bg-white/5 backdrop-blur-sm"
-          >
-            Coming Soon
-          </button>
-        </div>
-
-      </div>
-    </div>
+    <main className="relative w-screen h-screen bg-background text-foreground overflow-hidden transition-colors duration-500">
+      <InfiniteCanvas items={exploreItems} />
+    </main>
   );
 }

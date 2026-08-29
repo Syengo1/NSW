@@ -1,6 +1,6 @@
 // src/app/layout.tsx
 import type { Metadata, Viewport } from "next";
-import { Inter, Oswald } from "next/font/google";
+import { Inter, Oswald, Roboto_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Suspense } from "react";
@@ -17,6 +17,13 @@ const inter = Inter({
 const oswald = Oswald({ 
   subsets: ["latin"],
   variable: "--font-oswald",
+  display: "swap",
+});
+
+// 🚨 UI FIX: Added Roboto Mono specifically for the Infinite Canvas Card metadata
+const robotoMono = Roboto_Mono({
+  subsets: ["latin"],
+  variable: "--font-roboto-mono",
   display: "swap",
 });
 
@@ -72,6 +79,7 @@ export default function RootLayout({
         className={`
           ${inter.variable} 
           ${oswald.variable} 
+          ${robotoMono.variable} 
           font-sans 
           antialiased 
           bg-background 
