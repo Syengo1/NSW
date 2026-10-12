@@ -2,7 +2,7 @@
 
 import { useState, useRef, Suspense } from "react";
 import Image from "next/image";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { formatCurrency, cn } from "@/lib/utils";
 import { ShoppingBag, Share2, AlertCircle, Loader2, Heart, ArrowLeft, ArrowRight, ImageIcon } from "lucide-react";
 import { useCartStore } from "@/lib/store/cart";
@@ -22,34 +22,64 @@ const isValidImageUrl = (url?: string | null) => {
 };
 
 function ShowcaseContent({ product }: ProductShowcaseProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
+  
   const urlColor = searchParams.get('color');
-
   const colors = Array.from(new Set(product.variants.map(v => v.color)));
   const sizes = Array.from(new Set(product.variants.map(v => v.size)));
 
-  // --- STATE HYDRATION ENGINE (Fixes the cascading render error) ---
-  // 1. Calculate the initial color safely
+  // --- SCHEMA-AWARE IMAGE MATCHING ENGINE ---
+  // Mirrors the robust logic from page.tsx to ensure frontend buttons find the exact image 
+  // whether it's linked via color_tag or variant_id foreign keys.
+  const findImageIndexForColor = (targetColor: string | null) => {
+    if (!targetColor) return -1;
+    const normalizedColor = targetColor.toLowerCase().trim();
+
+    // 1. Try matching by color_tag
+    let idx = product.product_images.findIndex(
+      img => img.color_tag && img.color_tag.toLowerCase().trim() === normalizedColor
+    );
+
+    if (idx !== -1) return idx;
+
+    // 2. Try matching by variant_id relationship
+    const matchingVariant = product.variants.find(
+      v => v.color && v.color.toLowerCase().trim() === normalizedColor
+    );
+
+    if (matchingVariant) {
+      idx = product.product_images.findIndex(
+        img => img.variant_id === matchingVariant.id
+      );
+    }
+
+    return idx;
+  };
+
+  // --- INITIALIZATION ---
   const initialColor = urlColor && colors.includes(urlColor) ? urlColor : (product.variants[0]?.color || null);
-  
-  // 2. Synchronously find the matching image index during the initial render phase
-  const targetImgIdx = initialColor 
-    ? product.product_images.findIndex(img => img.color_tag?.toLowerCase() === initialColor.toLowerCase()) 
-    : 0;
-  
-  // 3. Fallback to index 0 if the color doesn't have a specifically tagged image
+  const targetImgIdx = findImageIndexForColor(initialColor);
   const startingImageIndex = targetImgIdx !== -1 ? targetImgIdx : 0;
 
   // --- STATE ---
-  // Seed the states with the pre-calculated values
   const [selectedImageIdx, setSelectedImageIdx] = useState(startingImageIndex);
   const [selectedColor, setSelectedColor] = useState<string | null>(initialColor);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
+  
   const [isAdding, setIsAdding] = useState(false);
   const [isWishlisted, setIsWishlisted] = useState(false); 
-
   const thumbnailScrollRef = useRef<HTMLDivElement>(null);
   const { addItem, openCart } = useCartStore();
+
+  // --- PERFECT SYNC HELPER: Updates URL without triggering a full page reload ---
+  const updateUrlColor = (color: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('color', color);
+    // Use { scroll: false } so the user doesn't lose their place on the page
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
 
   // --- DATA PROCESSING ---
   const activeVariant = product.variants.find(
@@ -59,6 +89,7 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
   const adjustment = activeVariant?.price_adjustment || 0;
   const currentBasePrice = (product.base_price + adjustment) / 100;
   const currentSalePrice = product.sale_price ? (product.sale_price + adjustment) / 100 : null;
+  
   const isOnSale = !!currentSalePrice;
   const discountPercent = isOnSale 
     ? Math.round(((currentBasePrice - currentSalePrice) / currentBasePrice) * 100) 
@@ -75,7 +106,6 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
     }
 
     setIsAdding(true);
-
     addItem({
       variantId: activeVariant.id,
       productId: product.id,
@@ -98,8 +128,8 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
   const handleShare = async () => {
     try {
       await navigator.share({
-        title: product.title,
-        url: window.location.href,
+        title: `${selectedColor ? selectedColor + ' ' : ''}${product.title}`,
+        url: window.location.href, // This now contains the perfectly synced ?color= parameter
       });
     } catch {
       navigator.clipboard.writeText(window.location.href);
@@ -132,8 +162,7 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
             >
               <Heart size={28} strokeWidth={1.5} className={cn(isWishlisted ? "fill-foreground" : "fill-transparent", "transition-colors")} />
             </button>
-
-            {/* CINEMATIC CROSSFADE: Images melt into one another when colors change */}
+            
             <AnimatePresence mode="wait">
               {safeMainImageUrl ? (
                 <motion.div
@@ -148,6 +177,7 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
                     src={safeMainImageUrl}
                     alt={`${product.title} - View ${selectedImageIdx + 1}`}
                     fill
+                    unoptimized // Bypasses Next.js IP blocking for Supabase images
                     priority={selectedImageIdx === 0}
                     fetchPriority={selectedImageIdx === 0 ? "high" : "auto"}
                     className="object-contain p-4 md:p-8 mix-blend-multiply dark:mix-blend-normal"
@@ -168,30 +198,55 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
               <button onClick={() => scrollThumbnails('left')} className="p-3 md:p-4 border-2 border-foreground bg-background hover:bg-muted transition-colors shrink-0">
                 <ArrowLeft size={20} strokeWidth={1.5} className="text-foreground" />
               </button>
-
               <div ref={thumbnailScrollRef} className="flex-1 flex gap-2 overflow-x-auto scrollbar-hide snap-x scroll-smooth px-1">
                 {product.product_images.map((img, idx) => {
                   const safeThumbUrl = isValidImageUrl(img.url) ? img.url : null;
                   if (!safeThumbUrl) return null;
-
+                  
                   return (
                     <button
                       key={idx}
-                      onClick={() => setSelectedImageIdx(idx)}
+                      onClick={() => {
+                        // 🚨 PERFECT SYNC: Clicking a thumbnail updates the image, color selection, and URL
+                        setSelectedImageIdx(idx);
+                        
+                        // Extract color dynamically from color_tag OR variant_id
+                        let imgColor = img.color_tag;
+                        if (!imgColor && img.variant_id) {
+                          const matchedVariant = product.variants.find(v => v.id === img.variant_id);
+                          if (matchedVariant) imgColor = matchedVariant.color;
+                        }
+
+                        if (imgColor && imgColor.toLowerCase() !== selectedColor?.toLowerCase()) {
+                          // Make sure it's a valid available color before switching
+                          const isValidColor = colors.some(c => c.toLowerCase() === imgColor?.toLowerCase());
+                          if (isValidColor) {
+                            const exactColorCase = colors.find(c => c.toLowerCase() === imgColor?.toLowerCase()) || imgColor;
+                            setSelectedColor(exactColorCase);
+                            setSelectedSize(null);
+                            updateUrlColor(exactColorCase);
+                          }
+                        }
+                      }}
                       className={cn(
                         "relative w-20 h-20 md:w-24 md:h-24 flex-shrink-0 transition-all duration-300 snap-start bg-[#ebedee] dark:bg-zinc-900",
                         selectedImageIdx === idx ? "border-b-4 border-foreground opacity-100" : "border-b-4 border-transparent opacity-50 hover:opacity-100"
                       )}
                     >
                       <Image 
-                        src={safeThumbUrl} alt={`Thumbnail ${idx + 1}`} fill loading="lazy" decoding="async" sizes="96px"
+                        src={safeThumbUrl} 
+                        alt={`Thumbnail ${idx + 1}`} 
+                        fill 
+                        unoptimized // Bypasses Next.js IP blocking
+                        loading="lazy" 
+                        decoding="async" 
+                        sizes="96px"
                         className="object-contain p-2 mix-blend-multiply dark:mix-blend-normal"
                       />
                     </button>
                   );
                 })}
               </div>
-
               <button onClick={() => scrollThumbnails('right')} className="p-3 md:p-4 border-2 border-foreground bg-background hover:bg-muted transition-colors shrink-0">
                 <ArrowRight size={20} strokeWidth={1.5} className="text-foreground" />
               </button>
@@ -213,7 +268,7 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
                 <Share2 size={18} className="text-foreground" />
               </button>
             </div>
-
+            
             <div className="flex items-center gap-4">
               {isOnSale ? (
                 <div className="flex items-baseline gap-3">
@@ -241,10 +296,12 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
                   <button
                     key={color}
                     onClick={() => {
+                      // 🚨 PERFECT SYNC: Clicking color updates selection, image gallery, and URL
                       setSelectedColor(color);
-                      setSelectedSize(null); 
-                      // Switch to the color-specific image instantly
-                      const matchingImgIdx = product.product_images.findIndex(img => img.color_tag?.toLowerCase() === color.toLowerCase());
+                      setSelectedSize(null);
+                      updateUrlColor(color);
+                      
+                      const matchingImgIdx = findImageIndexForColor(color);
                       if (matchingImgIdx !== -1) setSelectedImageIdx(matchingImgIdx);
                     }}
                     className={cn(
@@ -271,7 +328,7 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
                 const variant = product.variants.find(v => v.size === size && v.color === selectedColor);
                 const isAvailable = variant && variant.stock_quantity > 0;
                 const isSelected = selectedSize === size;
-
+                
                 return (
                   <button
                     key={size}
@@ -310,14 +367,12 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
             <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">The Manifesto</h3>
             <p className="text-sm leading-relaxed text-foreground/80 whitespace-pre-wrap">{product.description || "Premium streetwear piece. Check label for care instructions."}</p>
           </div>
-
         </div>
       </div>
     </div>
   );
 }
 
-// Wrap inside Suspense to satisfy Next.js 13+ useSearchParams requirement
 export default function ProductShowcase({ product }: ProductShowcaseProps) {
   return (
     <Suspense fallback={<div className="min-h-[50vh] flex items-center justify-center"><Loader2 className="animate-spin text-primary" size={32} /></div>}>

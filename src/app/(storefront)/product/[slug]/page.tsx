@@ -9,6 +9,8 @@ export interface ProductImage {
   url: string;
   display_order: number;
   color_tag: string | null;
+  variant_id: string | null;
+  alt_text: string | null;
 }
 
 export interface ProductVariant {
@@ -34,20 +36,16 @@ export interface FullProduct {
 }
 
 // 🚨 PERFORMANCE FIX 1: EDGE CACHING (ISR)
-// Revalidates this page on the Vercel Edge Network every 60 seconds. 
-// This gives users instant load times while keeping stock/prices fresh.
 export const revalidate = 60; 
 
 // 🚨 PERFORMANCE FIX 2: REACT REQUEST MEMOIZATION
-// Next.js normally calls the DB twice (once for Metadata, once for the Page). 
-// `cache()` wraps the Supabase call so it only executes once per request cycle.
 const getProduct = cache(async (slug: string) => {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('products')
     .select(`
       id, title, slug, description, base_price, sale_price, category, status,
-      product_images ( url, display_order, color_tag ),
+      product_images ( url, display_order, color_tag, variant_id, alt_text ),
       variants ( id, size, color, stock_quantity, price_adjustment, sku )
     `)
     .eq('slug', slug)
@@ -61,46 +59,98 @@ const getProduct = cache(async (slug: string) => {
   return data as FullProduct;
 });
 
-
 // --- DYNAMIC LOCALIZED METADATA ---
-export async function generateMetadata({ 
-  params 
-}: { 
-  params: Promise<{ slug: string }> 
-}): Promise<Metadata> {
+export async function generateMetadata(
+  { params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ [key: string]: string | string[] | undefined }> }
+): Promise<Metadata> {
   const { slug } = await params;
+  const resolvedSearchParams = await searchParams;
+  
+  // Next.js automatically decodes searchParams (White%2FBlack -> White/Black)
+  const rawColor = typeof resolvedSearchParams.color === 'string' ? resolvedSearchParams.color : null;
+  
   const product = await getProduct(slug);
 
   if (!product) return { title: 'Product Not Found | OP Fits' };
 
   const currentPrice = product.sale_price ? product.sale_price / 100 : product.base_price / 100;
   const priceInKes = currentPrice.toLocaleString();
-  const mainImage = product.product_images?.[0]?.url || '/og-placeholder.jpg';
+  
+  // 🚨 VARIANT-AWARE OG IMAGE LOGIC
+  let matchedVariantImage = null;
+  
+  if (rawColor) {
+    const targetColor = rawColor.toLowerCase().trim();
+    
+    // 1. Try matching directly via color_tag in product_images
+    const imageByColorTag = product.product_images.find(
+      img => img.color_tag && img.color_tag.toLowerCase().trim() === targetColor
+    );
+    
+    if (imageByColorTag) {
+      matchedVariantImage = imageByColorTag.url;
+    } else {
+      // 2. Schema Upgrade: Try matching via variants table relationship
+      const matchingVariant = product.variants.find(
+        v => v.color && v.color.toLowerCase().trim() === targetColor
+      );
+      
+      if (matchingVariant) {
+        // Find an image linked explicitly to this variant_id
+        const imageByVariantId = product.product_images.find(
+          img => img.variant_id === matchingVariant.id
+        );
+        if (imageByVariantId) {
+          matchedVariantImage = imageByVariantId.url;
+        }
+      }
+    }
+  }
 
-  // 🚨 SEO FIX: Kenyan Hype & Reseller Localization
+  // Fallback to the primary image if the specific variant image isn't found
+  const mainImage = matchedVariantImage || product.product_images?.[0]?.url || '/og-placeholder.jpg';
+  const displayTitle = rawColor ? `${rawColor} ${product.title}` : product.title;
+
   return {
-    title: `${product.title} | Buy in Kenya`,
-    description: `${product.description || '100% authentic streetwear.'} Get the exclusive ${product.title} for KES ${priceInKes}. Sourced globally, verified authentic, and delivered fast across Nairobi and Kenya.`,
-    keywords: [product.title, "Buy sneakers Nairobi", "Streetwear Kenya", "Authentic Clothing", product.category, "OP Fits"],
+    title: `${displayTitle} | Buy in Kenya`,
+    description: `${product.description || '100% authentic streetwear.'} Get the exclusive ${displayTitle} for KES ${priceInKes}. Sourced globally, verified authentic, and delivered fast across Nairobi and Kenya.`,
+    keywords: [product.title, rawColor || "", "Buy sneakers Nairobi", "Streetwear Kenya", "Authentic Clothing", product.category, "OP Fits"],
     openGraph: {
-      title: `${product.title} - Available Now in Kenya`,
-      description: `Secure the ${product.title} today. 100% authentic.`,
-      images: [{ url: mainImage }],
+      title: `${displayTitle} - Available Now`,
+      description: `Secure the ${displayTitle} today. 100% authentic.`,
+      url: `https://www.opfits.com/product/${product.slug}${rawColor ? `?color=${encodeURIComponent(rawColor)}` : ''}`,
+      images: [
+        { 
+          url: mainImage,
+          width: 1200, 
+          height: 630,
+          alt: displayTitle,
+        }
+      ],
       type: "website",
+      siteName: "OP Fits",
     },
+    twitter: {
+      card: "summary_large_image",
+      title: `${displayTitle} - Available Now`,
+      description: `Secure the ${displayTitle} today. 100% authentic.`,
+      images: [mainImage],
+    }
   };
 }
 
-
 // --- MAIN PAGE ORCHESTRATOR ---
 export default async function ProductPage({ 
-  params 
+  params,
+  searchParams 
 }: { 
-  params: Promise<{ slug: string }> 
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { slug } = await params;
+  const resolvedSearchParams = await searchParams;
+  const rawColor = typeof resolvedSearchParams.color === 'string' ? resolvedSearchParams.color : null;
   
-  // Fetches instantly from the React cache created by generateMetadata
   const product = await getProduct(slug);
 
   if (!product) notFound();
@@ -110,20 +160,43 @@ export default async function ProductPage({
   const totalStock = product.variants.reduce((acc, v) => acc + v.stock_quantity, 0);
   const isInStock = totalStock > 0;
 
-  // 🚨 SEO FIX: Google Rich Snippets Generation
+  // Resolve Variant Image for Google Rich Snippets
+  let matchedVariantImage = null;
+  if (rawColor) {
+    const targetColor = rawColor.toLowerCase().trim();
+    const imageByColorTag = product.product_images.find(img => img.color_tag && img.color_tag.toLowerCase().trim() === targetColor);
+    
+    if (imageByColorTag) {
+      matchedVariantImage = imageByColorTag.url;
+    } else {
+      const matchingVariant = product.variants.find(v => v.color && v.color.toLowerCase().trim() === targetColor);
+      if (matchingVariant) {
+        const imageByVariantId = product.product_images.find(img => img.variant_id === matchingVariant.id);
+        if (imageByVariantId) matchedVariantImage = imageByVariantId.url;
+      }
+    }
+  }
+
+  const allImages = product.product_images.map(img => img.url);
+  const schemaImages = matchedVariantImage 
+    ? [matchedVariantImage, ...allImages.filter(url => url !== matchedVariantImage)]
+    : allImages;
+
+  const displayTitle = rawColor ? `${rawColor} ${product.title}` : product.title;
+
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Product',
-    name: product.title,
+    name: displayTitle,
     description: product.description || `Buy the ${product.title} at OP Fits Kenya.`,
-    image: product.product_images.map(img => img.url),
+    image: schemaImages,
     category: product.category,
     offers: {
       '@type': 'Offer',
       priceCurrency: 'KES',
       price: currentPrice,
       availability: isInStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-      url: `https://www.opfits.com/product/${product.slug}`,
+      url: `https://www.opfits.com/product/${product.slug}${rawColor ? `?color=${encodeURIComponent(rawColor)}` : ''}`,
       seller: {
         '@type': 'Organization',
         name: 'OP Fits'
@@ -133,12 +206,10 @@ export default async function ProductPage({
 
   return (
     <div className="min-h-screen bg-background text-foreground pb-24 md:pb-0">
-       {/* Inject JSON-LD directly into the DOM for Googlebot */}
        <script
          type="application/ld+json"
          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
        />
-       
        <ProductShowcase product={product} />
     </div>
   );
