@@ -31,111 +31,179 @@ export interface FullProduct {
   sale_price: number | null;
   category: string;
   status: string;
+  is_visible: boolean;
   product_images: ProductImage[];
   variants: ProductVariant[];
 }
 
-// 🚨 PERFORMANCE FIX 1: EDGE CACHING (ISR)
+// 🚨 ROUTE-SEGMENT REVALIDATION (ISR)
 export const revalidate = 60; 
 
-// 🚨 PERFORMANCE FIX 2: REACT REQUEST MEMOIZATION
-const getProduct = cache(async (slug: string) => {
+// 🚨 REACT REQUEST MEMOIZATION & SECURE LOOKUP
+const getProduct = cache(async (slug: string): Promise<FullProduct | null> => {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('products')
     .select(`
-      id, title, slug, description, base_price, sale_price, category, status,
+      id, title, slug, description, base_price, sale_price, category, status, is_visible,
       product_images ( url, display_order, color_tag, variant_id, alt_text ),
       variants ( id, size, color, stock_quantity, price_adjustment, sku )
     `)
     .eq('slug', slug)
+    .eq('is_visible', true)
+    .in('status', ['active', 'dropping_soon'])
     .single();
 
-  if (error || !data) return null;
+  if (error) {
+    // Only return null silently if genuinely not found; log real database errors
+    if (error.code !== 'PGRST116') {
+      console.error(`[Supabase Error fetching product ${slug}]:`, error);
+    }
+    return null;
+  }
 
-  // Ensure images are perfectly sorted
-  data.product_images.sort((a: ProductImage, b: ProductImage) => a.display_order - b.display_order);
-  
-  return data as FullProduct;
+  if (!data) return null;
+
+  // Sort images without mutating the original record
+  const sortedImages = [...(data.product_images || [])].sort(
+    (a: ProductImage, b: ProductImage) => a.display_order - b.display_order
+  );
+
+  return {
+    ...data,
+    product_images: sortedImages,
+  } as FullProduct;
 });
 
-// --- DYNAMIC LOCALIZED METADATA ---
-export async function generateMetadata(
-  { params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ [key: string]: string | string[] | undefined }> }
-): Promise<Metadata> {
-  const { slug } = await params;
-  const resolvedSearchParams = await searchParams;
-  
-  // Next.js automatically decodes searchParams (White%2FBlack -> White/Black)
-  const rawColor = typeof resolvedSearchParams.color === 'string' ? resolvedSearchParams.color : null;
-  
-  const product = await getProduct(slug);
+// --- PURE VARIANT & COMMERCE RESOLVER ---
+function resolveVariantDetails(product: FullProduct, rawColor: string | null) {
+  const normalizedRequestedColor = rawColor?.toLowerCase().trim() || null;
 
-  if (!product) return { title: 'Product Not Found | OP Fits' };
+  // 1. Validate if the requested color actually exists for this product
+  const matchingVariants = normalizedRequestedColor
+    ? product.variants.filter(
+        (v) => v.color && v.color.toLowerCase().trim() === normalizedRequestedColor
+      )
+    : [];
 
-  const currentPrice = product.sale_price ? product.sale_price / 100 : product.base_price / 100;
-  const priceInKes = currentPrice.toLocaleString();
-  
-  // 🚨 VARIANT-AWARE OG IMAGE LOGIC
-  let matchedVariantImage = null;
-  
-  if (rawColor) {
-    const targetColor = rawColor.toLowerCase().trim();
+  const isValidColor = matchingVariants.length > 0;
+  const canonicalColor = isValidColor ? matchingVariants[0].color : null;
+
+  // 2. Resolve matching image
+  let matchedImage: string | null = null;
+  if (canonicalColor) {
+    const lowerColor = canonicalColor.toLowerCase().trim();
     
-    // 1. Try matching directly via color_tag in product_images
-    const imageByColorTag = product.product_images.find(
-      img => img.color_tag && img.color_tag.toLowerCase().trim() === targetColor
+    // A. Match via color_tag
+    const imgByTag = product.product_images.find(
+      (img) => img.color_tag && img.color_tag.toLowerCase().trim() === lowerColor
     );
-    
-    if (imageByColorTag) {
-      matchedVariantImage = imageByColorTag.url;
+
+    if (imgByTag) {
+      matchedImage = imgByTag.url;
     } else {
-      // 2. Schema Upgrade: Try matching via variants table relationship
-      const matchingVariant = product.variants.find(
-        v => v.color && v.color.toLowerCase().trim() === targetColor
+      // B. Match via variant_id relationship
+      const variantIds = new Set(matchingVariants.map((v) => v.id));
+      const imgByVariant = product.product_images.find(
+        (img) => img.variant_id && variantIds.has(img.variant_id)
       );
-      
-      if (matchingVariant) {
-        // Find an image linked explicitly to this variant_id
-        const imageByVariantId = product.product_images.find(
-          img => img.variant_id === matchingVariant.id
-        );
-        if (imageByVariantId) {
-          matchedVariantImage = imageByVariantId.url;
-        }
+      if (imgByVariant) {
+        matchedImage = imgByVariant.url;
       }
     }
   }
 
-  // Fallback to the primary image if the specific variant image isn't found
-  const mainImage = matchedVariantImage || product.product_images?.[0]?.url || '/og-placeholder.jpg';
-  const displayTitle = rawColor ? `${rawColor} ${product.title}` : product.title;
+  const fallbackImage = product.product_images?.[0]?.url || null;
+  const mainImage = matchedImage || fallbackImage;
+
+  // 3. Price resolution (proper null-checking on sale_price and adjustment)
+  let priceAdjustment = 0;
+  if (matchingVariants.length > 0) {
+    priceAdjustment = Math.min(...matchingVariants.map((v) => v.price_adjustment || 0));
+  }
+
+  const hasSalePrice = product.sale_price != null;
+  const activeBasePrice = product.base_price + priceAdjustment;
+  const activeSalePrice = hasSalePrice ? (product.sale_price! + priceAdjustment) : null;
+  const finalPriceCents = activeSalePrice != null ? activeSalePrice : activeBasePrice;
+  const numericPrice = finalPriceCents / 100;
+
+  const priceInKes = new Intl.NumberFormat('en-KE', {
+    style: 'decimal',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(numericPrice);
+
+  // 4. Stock & availability resolution
+  const targetVariants = isValidColor ? matchingVariants : product.variants;
+  const totalStock = targetVariants.reduce((acc, v) => acc + (v.stock_quantity || 0), 0);
+  const isInStock = totalStock > 0;
+
+  // 5. SKU & Display Title
+  const sku = (isValidColor && matchingVariants[0]?.sku) || product.slug;
+  const displayTitle = canonicalColor ? `${canonicalColor} ${product.title}` : product.title;
 
   return {
-    title: `${displayTitle} | Buy in Kenya`,
-    description: `${product.description || '100% authentic streetwear.'} Get the exclusive ${displayTitle} for KES ${priceInKes}. Sourced globally, verified authentic, and delivered fast across Nairobi and Kenya.`,
-    keywords: [product.title, rawColor || "", "Buy sneakers Nairobi", "Streetwear Kenya", "Authentic Clothing", product.category, "OP Fits"],
+    canonicalColor,
+    mainImage,
+    numericPrice,
+    priceInKes,
+    isInStock,
+    sku,
+    displayTitle,
+  };
+}
+
+// --- DYNAMIC LOCALIZED METADATA ---
+export async function generateMetadata(
+  { params, searchParams }: { 
+    params: Promise<{ slug: string }>; 
+    searchParams: Promise<{ [key: string]: string | string[] | undefined }> 
+  }
+): Promise<Metadata> {
+  const { slug } = await params;
+  const resolvedSearchParams = await searchParams;
+  const rawColor = typeof resolvedSearchParams.color === 'string' ? resolvedSearchParams.color : null;
+  
+  const product = await getProduct(slug);
+  if (!product) return { title: 'Product Not Found | OP Fits' };
+
+  const details = resolveVariantDetails(product, rawColor);
+  const siteUrl = 'https://www.opfits.com';
+  const canonicalUrl = `${siteUrl}/product/${product.slug}`;
+  const shareUrl = `${canonicalUrl}${details.canonicalColor ? `?color=${encodeURIComponent(details.canonicalColor)}` : ''}`;
+
+  const metaDescription = product.description
+    ? `${product.description.slice(0, 120)}... Available in Kenya at KES ${details.priceInKes}.`
+    : `Shop the authentic ${details.displayTitle} at OP Fits Kenya for KES ${details.priceInKes}. Verified streetwear and sneaker drops in Nairobi.`;
+
+  return {
+    title: `${details.displayTitle} in Kenya`,
+    description: metaDescription,
+    alternates: {
+      canonical: canonicalUrl,
+    },
     openGraph: {
-      title: `${displayTitle} - Available Now`,
-      description: `Secure the ${displayTitle} today. 100% authentic.`,
-      url: `https://www.opfits.com/product/${product.slug}${rawColor ? `?color=${encodeURIComponent(rawColor)}` : ''}`,
-      images: [
-        { 
-          url: mainImage,
-          width: 1200, 
-          height: 630,
-          alt: displayTitle,
-        }
-      ],
+      title: `${details.displayTitle} - KES ${details.priceInKes}`,
+      description: metaDescription,
+      url: shareUrl,
+      ...(details.mainImage && {
+        images: [
+          { 
+            url: details.mainImage,
+            alt: details.displayTitle,
+          }
+        ],
+      }),
       type: "website",
       siteName: "OP Fits",
     },
     twitter: {
       card: "summary_large_image",
-      title: `${displayTitle} - Available Now`,
-      description: `Secure the ${displayTitle} today. 100% authentic.`,
-      images: [mainImage],
-    }
+      title: `${details.displayTitle} - KES ${details.priceInKes}`,
+      description: metaDescription,
+      ...(details.mainImage && { images: [details.mainImage] }),
+    },
   };
 }
 
@@ -152,65 +220,60 @@ export default async function ProductPage({
   const rawColor = typeof resolvedSearchParams.color === 'string' ? resolvedSearchParams.color : null;
   
   const product = await getProduct(slug);
-
   if (!product) notFound();
 
-  // --- JSON-LD STRUCTURED DATA COMPUTATIONS ---
-  const currentPrice = product.sale_price ? product.sale_price / 100 : product.base_price / 100;
-  const totalStock = product.variants.reduce((acc, v) => acc + v.stock_quantity, 0);
-  const isInStock = totalStock > 0;
+  const details = resolveVariantDetails(product, rawColor);
 
-  // Resolve Variant Image for Google Rich Snippets
-  let matchedVariantImage = null;
-  if (rawColor) {
-    const targetColor = rawColor.toLowerCase().trim();
-    const imageByColorTag = product.product_images.find(img => img.color_tag && img.color_tag.toLowerCase().trim() === targetColor);
-    
-    if (imageByColorTag) {
-      matchedVariantImage = imageByColorTag.url;
-    } else {
-      const matchingVariant = product.variants.find(v => v.color && v.color.toLowerCase().trim() === targetColor);
-      if (matchingVariant) {
-        const imageByVariantId = product.product_images.find(img => img.variant_id === matchingVariant.id);
-        if (imageByVariantId) matchedVariantImage = imageByVariantId.url;
-      }
-    }
-  }
+  // Filter valid image URLs
+  const validImages = product.product_images
+    .map((img) => img.url)
+    .filter((url): url is string => Boolean(url));
 
-  const allImages = product.product_images.map(img => img.url);
-  const schemaImages = matchedVariantImage 
-    ? [matchedVariantImage, ...allImages.filter(url => url !== matchedVariantImage)]
-    : allImages;
+  const schemaImages = details.mainImage
+    ? [details.mainImage, ...validImages.filter((u) => u !== details.mainImage)]
+    : validImages;
 
-  const displayTitle = rawColor ? `${rawColor} ${product.title}` : product.title;
-
+  // 🚨 JSON-LD STRUCTURED DATA
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Product',
-    name: displayTitle,
-    description: product.description || `Buy the ${product.title} at OP Fits Kenya.`,
-    image: schemaImages,
+    name: details.displayTitle,
+    description: product.description || `Buy the ${details.displayTitle} at OP Fits Kenya.`,
+    ...(schemaImages.length > 0 && { image: schemaImages }),
+    sku: details.sku,
     category: product.category,
+    brand: {
+      '@type': 'Brand',
+      name: 'OP Fits',
+    },
+    ...(details.canonicalColor && { color: details.canonicalColor }),
     offers: {
       '@type': 'Offer',
       priceCurrency: 'KES',
-      price: currentPrice,
-      availability: isInStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-      url: `https://www.opfits.com/product/${product.slug}${rawColor ? `?color=${encodeURIComponent(rawColor)}` : ''}`,
+      price: details.numericPrice,
+      availability: details.isInStock
+        ? 'https://schema.org/InStock'
+        : 'https://schema.org/OutOfStock',
+      url: `https://www.opfits.com/product/${product.slug}${
+        details.canonicalColor ? `?color=${encodeURIComponent(details.canonicalColor)}` : ''
+      }`,
       seller: {
         '@type': 'Organization',
-        name: 'OP Fits'
-      }
-    }
+        name: 'OP Fits',
+      },
+    },
   };
+
+  // 🚨 SECURITY FIX: Neutralize HTML closing script tags in JSON-LD serialization
+  const safeJsonLdString = JSON.stringify(jsonLd).replace(/</g, '\\u003c');
 
   return (
     <div className="min-h-screen bg-background text-foreground pb-24 md:pb-0">
-       <script
-         type="application/ld+json"
-         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-       />
-       <ProductShowcase product={product} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: safeJsonLdString }}
+      />
+      <ProductShowcase product={product} />
     </div>
   );
 }

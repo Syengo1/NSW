@@ -14,11 +14,25 @@ interface ProductShowcaseProps {
   product: FullProduct;
 }
 
-// --- UTILITY: SAFE IMAGE VALIDATION ---
-const isValidImageUrl = (url?: string | null) => {
-  if (!url) return false;
-  if (url.startsWith('/')) return true; 
-  return url.includes('supabase.co') || url.includes('vercel-storage.com');
+// 🚨 SECURITY FIX: STRICT IMAGE URL VALIDATION
+// Uses the URL parser to strictly allow known hosts rather than weak substring matching
+const ALLOWED_IMAGE_HOSTS = [
+  "wqrtjgfrjuadksaotbxj.supabase.co", // Your Supabase Project
+];
+
+const isValidImageUrl = (value?: string | null): boolean => {
+  if (!value) return false;
+  // Permit same-origin paths for local assets
+  if (value.startsWith("/") && !value.startsWith("//")) return true;
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return false;
+    // Allow Supabase and Vercel Blob storage
+    return ALLOWED_IMAGE_HOSTS.includes(url.hostname) || url.hostname.includes('vercel-storage.com');
+  } catch {
+    return false;
+  }
 };
 
 function ShowcaseContent({ product }: ProductShowcaseProps) {
@@ -27,39 +41,38 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
   const searchParams = useSearchParams();
   
   const urlColor = searchParams.get('color');
-  const colors = Array.from(new Set(product.variants.map(v => v.color)));
-  const sizes = Array.from(new Set(product.variants.map(v => v.size)));
+  
+  // Normalize and extract unique values
+  const colors = Array.from(new Set(product.variants.map(v => v.color?.trim()).filter(Boolean)));
+  const sizes = Array.from(new Set(product.variants.map(v => v.size?.trim()).filter(Boolean)));
 
   // --- SCHEMA-AWARE IMAGE MATCHING ENGINE ---
-  // Mirrors the robust logic from page.tsx to ensure frontend buttons find the exact image 
-  // whether it's linked via color_tag or variant_id foreign keys.
   const findImageIndexForColor = (targetColor: string | null) => {
     if (!targetColor) return -1;
     const normalizedColor = targetColor.toLowerCase().trim();
 
-    // 1. Try matching by color_tag
     let idx = product.product_images.findIndex(
       img => img.color_tag && img.color_tag.toLowerCase().trim() === normalizedColor
     );
-
     if (idx !== -1) return idx;
 
-    // 2. Try matching by variant_id relationship
     const matchingVariant = product.variants.find(
       v => v.color && v.color.toLowerCase().trim() === normalizedColor
     );
 
     if (matchingVariant) {
-      idx = product.product_images.findIndex(
-        img => img.variant_id === matchingVariant.id
-      );
+      idx = product.product_images.findIndex(img => img.variant_id === matchingVariant.id);
     }
-
     return idx;
   };
 
-  // --- INITIALIZATION ---
-  const initialColor = urlColor && colors.includes(urlColor) ? urlColor : (product.variants[0]?.color || null);
+  // 🚨 LOGIC FIX: SMART INITIAL COLOR
+  // Default to the first color that actually has stock, rather than blindly picking the first variant
+  const firstInStockColor = colors.find(c => 
+    product.variants.some(v => v.color === c && v.stock_quantity > 0)
+  ) || colors[0] || null;
+
+  const initialColor = urlColor && colors.includes(urlColor) ? urlColor : firstInStockColor;
   const targetImgIdx = findImageIndexForColor(initialColor);
   const startingImageIndex = targetImgIdx !== -1 ? targetImgIdx : 0;
 
@@ -73,37 +86,53 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
   const thumbnailScrollRef = useRef<HTMLDivElement>(null);
   const { addItem, openCart } = useCartStore();
 
-  // --- PERFECT SYNC HELPER: Updates URL without triggering a full page reload ---
+  // --- PERFECT SYNC HELPER ---
   const updateUrlColor = (color: string) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('color', color);
-    // Use { scroll: false } so the user doesn't lose their place on the page
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
-  // --- DATA PROCESSING ---
+  // --- 🚨 LOGIC FIX: DYNAMIC VARIANT PRICING & STOCK ---
   const activeVariant = product.variants.find(
     v => v.color === selectedColor && v.size === selectedSize
   );
 
-  const adjustment = activeVariant?.price_adjustment || 0;
-  const currentBasePrice = (product.base_price + adjustment) / 100;
-  const currentSalePrice = product.sale_price ? (product.sale_price + adjustment) / 100 : null;
-  
-  const isOnSale = !!currentSalePrice;
+  const colorVariants = product.variants.filter(v => v.color === selectedColor);
+  const colorTotalStock = colorVariants.reduce((acc, v) => acc + v.stock_quantity, 0);
+  const isColorOutOfStock = colorTotalStock === 0;
+
+  // Calculate pricing to display (Handles unselected sizes by showing the lowest price for the color)
+  let displayBasePrice = product.base_price;
+  let displaySalePrice = product.sale_price;
+
+  if (activeVariant) {
+    displayBasePrice = product.base_price + activeVariant.price_adjustment;
+    // Strict null check instead of truthiness
+    displaySalePrice = product.sale_price != null ? product.sale_price + activeVariant.price_adjustment : null;
+  } else if (colorVariants.length > 0) {
+    const minAdjustment = Math.min(...colorVariants.map(v => v.price_adjustment));
+    displayBasePrice = product.base_price + minAdjustment;
+    displaySalePrice = product.sale_price != null ? product.sale_price + minAdjustment : null;
+  }
+
+  const currentBasePrice = displayBasePrice / 100;
+  const currentSalePrice = displaySalePrice != null ? displaySalePrice / 100 : null;
+  const isOnSale = currentSalePrice != null;
   const discountPercent = isOnSale 
     ? Math.round(((currentBasePrice - currentSalePrice) / currentBasePrice) * 100) 
     : 0;
 
   const currentImageData = product.product_images[selectedImageIdx];
   const safeMainImageUrl = isValidImageUrl(currentImageData?.url) ? currentImageData.url : null;
+  const mainImageAlt = currentImageData?.alt_text || `${product.title} - View ${selectedImageIdx + 1}`;
+
+  // Unified Purchase State
+  const canAddToCart = !!activeVariant && activeVariant.stock_quantity > 0 && !isAdding;
 
   // --- HANDLERS ---
   const handleAddToCart = () => {
-    if (!selectedColor || !selectedSize || !activeVariant) {
-      toast.error("Please select a color and size.");
-      return;
-    }
+    if (!canAddToCart || !activeVariant || !selectedColor || !selectedSize) return;
 
     setIsAdding(true);
     addItem({
@@ -111,7 +140,7 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
       productId: product.id,
       name: product.title,
       slug: product.slug,
-      price: product.sale_price ? (product.sale_price + adjustment) : (product.base_price + adjustment),
+      price: displaySalePrice != null ? displaySalePrice : displayBasePrice,
       image: safeMainImageUrl || product.product_images[0]?.url || '',
       size: selectedSize,
       color: selectedColor,
@@ -125,15 +154,29 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
     }, 400);
   };
 
+  // 🚨 LOGIC FIX: NATIVE SHARE ABORT HANDLING
   const handleShare = async () => {
+    const url = window.location.href;
+    const title = [selectedColor, product.title].filter(Boolean).join(" ");
+
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title, url });
+        return;
+      } catch (error) {
+        // Prevent fallback to clipboard if the user simply closed the native share menu
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+      }
+    }
+
     try {
-      await navigator.share({
-        title: `${selectedColor ? selectedColor + ' ' : ''}${product.title}`,
-        url: window.location.href, // This now contains the perfectly synced ?color= parameter
-      });
-    } catch {
-      navigator.clipboard.writeText(window.location.href);
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(url);
       toast.success("Link copied to clipboard!");
+    } catch {
+      toast.error("Unable to share automatically. Please copy the page URL.");
     }
   };
 
@@ -158,7 +201,9 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
           <div className="relative aspect-square md:aspect-[4/3] w-full overflow-hidden bg-[#ebedee] dark:bg-zinc-900 rounded-sm">
             <button 
               onClick={() => setIsWishlisted(!isWishlisted)}
-              className="absolute top-6 right-6 z-20 text-foreground hover:scale-110 transition-transform"
+              aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
+              aria-pressed={isWishlisted}
+              className="absolute top-6 right-6 z-20 text-foreground hover:scale-110 transition-transform focus-visible:ring-2 outline-none rounded-full"
             >
               <Heart size={28} strokeWidth={1.5} className={cn(isWishlisted ? "fill-foreground" : "fill-transparent", "transition-colors")} />
             </button>
@@ -175,11 +220,11 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
                 >
                   <Image 
                     src={safeMainImageUrl}
-                    alt={`${product.title} - View ${selectedImageIdx + 1}`}
+                    alt={mainImageAlt}
                     fill
-                    unoptimized // Bypasses Next.js IP blocking for Supabase images
+                    // Retained 'unoptimized' to bypass Next.js IP blocking for Supabase NAT64 IPs
+                    unoptimized 
                     priority={selectedImageIdx === 0}
-                    fetchPriority={selectedImageIdx === 0 ? "high" : "auto"}
                     className="object-contain p-4 md:p-8 mix-blend-multiply dark:mix-blend-normal"
                     sizes="(max-width: 1024px) 100vw, 60vw"
                   />
@@ -195,9 +240,14 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
 
           {product.product_images.length > 1 && (
             <div className="flex items-center gap-3 pt-2">
-              <button onClick={() => scrollThumbnails('left')} className="p-3 md:p-4 border-2 border-foreground bg-background hover:bg-muted transition-colors shrink-0">
+              <button 
+                onClick={() => scrollThumbnails('left')} 
+                aria-label="Scroll thumbnails left"
+                className="p-3 md:p-4 border-2 border-foreground bg-background hover:bg-muted transition-colors shrink-0 outline-none focus-visible:ring-2"
+              >
                 <ArrowLeft size={20} strokeWidth={1.5} className="text-foreground" />
               </button>
+              
               <div ref={thumbnailScrollRef} className="flex-1 flex gap-2 overflow-x-auto scrollbar-hide snap-x scroll-smooth px-1">
                 {product.product_images.map((img, idx) => {
                   const safeThumbUrl = isValidImageUrl(img.url) ? img.url : null;
@@ -205,12 +255,10 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
                   
                   return (
                     <button
-                      key={idx}
+                      key={img.url + idx}
                       onClick={() => {
-                        // 🚨 PERFECT SYNC: Clicking a thumbnail updates the image, color selection, and URL
                         setSelectedImageIdx(idx);
                         
-                        // Extract color dynamically from color_tag OR variant_id
                         let imgColor = img.color_tag;
                         if (!imgColor && img.variant_id) {
                           const matchedVariant = product.variants.find(v => v.id === img.variant_id);
@@ -218,7 +266,6 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
                         }
 
                         if (imgColor && imgColor.toLowerCase() !== selectedColor?.toLowerCase()) {
-                          // Make sure it's a valid available color before switching
                           const isValidColor = colors.some(c => c.toLowerCase() === imgColor?.toLowerCase());
                           if (isValidColor) {
                             const exactColorCase = colors.find(c => c.toLowerCase() === imgColor?.toLowerCase()) || imgColor;
@@ -228,16 +275,18 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
                           }
                         }
                       }}
+                      aria-label={`View product image ${idx + 1}`}
+                      aria-pressed={selectedImageIdx === idx}
                       className={cn(
-                        "relative w-20 h-20 md:w-24 md:h-24 flex-shrink-0 transition-all duration-300 snap-start bg-[#ebedee] dark:bg-zinc-900",
+                        "relative w-20 h-20 md:w-24 md:h-24 flex-shrink-0 transition-all duration-300 snap-start bg-[#ebedee] dark:bg-zinc-900 outline-none focus-visible:ring-2",
                         selectedImageIdx === idx ? "border-b-4 border-foreground opacity-100" : "border-b-4 border-transparent opacity-50 hover:opacity-100"
                       )}
                     >
                       <Image 
                         src={safeThumbUrl} 
-                        alt={`Thumbnail ${idx + 1}`} 
+                        alt="" // Empty alt as button aria-label provides context (A11y Fix)
                         fill 
-                        unoptimized // Bypasses Next.js IP blocking
+                        unoptimized
                         loading="lazy" 
                         decoding="async" 
                         sizes="96px"
@@ -247,7 +296,12 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
                   );
                 })}
               </div>
-              <button onClick={() => scrollThumbnails('right')} className="p-3 md:p-4 border-2 border-foreground bg-background hover:bg-muted transition-colors shrink-0">
+              
+              <button 
+                onClick={() => scrollThumbnails('right')} 
+                aria-label="Scroll thumbnails right"
+                className="p-3 md:p-4 border-2 border-foreground bg-background hover:bg-muted transition-colors shrink-0 outline-none focus-visible:ring-2"
+              >
                 <ArrowRight size={20} strokeWidth={1.5} className="text-foreground" />
               </button>
             </div>
@@ -264,7 +318,11 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-[0.2em] mb-2">{product.category || 'Collection'}</p>
                 <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tighter leading-tight">{product.title}</h1>
               </div>
-              <button onClick={handleShare} className="p-3 bg-secondary hover:bg-muted rounded-full transition-colors">
+              <button 
+                onClick={handleShare} 
+                aria-label="Share product"
+                className="p-3 bg-secondary hover:bg-muted rounded-full transition-colors outline-none focus-visible:ring-2"
+              >
                 <Share2 size={18} className="text-foreground" />
               </button>
             </div>
@@ -272,31 +330,44 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
             <div className="flex items-center gap-4">
               {isOnSale ? (
                 <div className="flex items-baseline gap-3">
-                  <span className="text-2xl font-black text-red-600 font-mono">{formatCurrency(currentSalePrice)}</span>
-                  <span className="text-lg text-muted-foreground line-through decoration-red-500 font-mono">{formatCurrency(currentBasePrice)}</span>
-                  <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 text-[10px] font-black uppercase tracking-widest rounded">-{discountPercent}%</span>
+                  <span className="text-2xl font-black text-red-600 font-mono">
+                    {!activeVariant && <span className="text-sm font-bold text-muted-foreground mr-1.5">FROM</span>}
+                    {formatCurrency(currentSalePrice)}
+                  </span>
+                  <span className="text-lg text-muted-foreground line-through decoration-red-500 font-mono">
+                    {formatCurrency(currentBasePrice)}
+                  </span>
+                  <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 text-[10px] font-black uppercase tracking-widest rounded">
+                    -{discountPercent}%
+                  </span>
                 </div>
               ) : (
-                <span className="text-2xl font-black text-foreground font-mono">{formatCurrency(currentBasePrice)}</span>
+                <span className="text-2xl font-black text-foreground font-mono">
+                  {!activeVariant && <span className="text-sm font-bold text-muted-foreground mr-1.5">FROM</span>}
+                  {formatCurrency(currentBasePrice)}
+                </span>
               )}
             </div>
           </div>
 
           <hr className="border-border" />
 
+          {/* COLOR SELECTOR */}
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Color</span>
               <span className="text-xs font-bold uppercase">{selectedColor || 'Select'}</span>
             </div>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-3" role="group" aria-label="Color Selection">
               {colors.map((color) => {
                 const isSelected = selectedColor === color;
+                const isColorStockEmpty = product.variants.filter(v => v.color === color).reduce((acc, v) => acc + v.stock_quantity, 0) === 0;
+
                 return (
                   <button
                     key={color}
+                    aria-pressed={isSelected}
                     onClick={() => {
-                      // 🚨 PERFECT SYNC: Clicking color updates selection, image gallery, and URL
                       setSelectedColor(color);
                       setSelectedSize(null);
                       updateUrlColor(color);
@@ -305,8 +376,9 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
                       if (matchingImgIdx !== -1) setSelectedImageIdx(matchingImgIdx);
                     }}
                     className={cn(
-                      "px-5 py-2.5 rounded-full text-xs font-bold uppercase border transition-all",
-                      isSelected ? "bg-foreground text-background border-foreground shadow-lg" : "bg-transparent text-foreground border-border hover:border-foreground/50"
+                      "px-5 py-2.5 rounded-full text-xs font-bold uppercase border transition-all outline-none focus-visible:ring-2",
+                      isSelected ? "bg-foreground text-background border-foreground shadow-lg" : "bg-transparent text-foreground border-border hover:border-foreground/50",
+                      isColorStockEmpty && "opacity-50"
                     )}
                   >
                     {color}
@@ -316,14 +388,17 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
             </div>
           </div>
 
+          {/* SIZE SELECTOR */}
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Size</span>
               {activeVariant && activeVariant.stock_quantity < 5 && activeVariant.stock_quantity > 0 && (
-                <span className="text-[10px] font-bold uppercase tracking-widest text-orange-500 flex items-center gap-1 animate-pulse"><AlertCircle size={12} /> Low Stock</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-orange-500 flex items-center gap-1 animate-pulse" role="status">
+                  <AlertCircle size={12} /> Low Stock
+                </span>
               )}
             </div>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-2" role="group" aria-label="Size Selection">
               {sizes.map((size) => {
                 const variant = product.variants.find(v => v.size === size && v.color === selectedColor);
                 const isAvailable = variant && variant.stock_quantity > 0;
@@ -334,8 +409,10 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
                     key={size}
                     onClick={() => isAvailable && setSelectedSize(size)}
                     disabled={!isAvailable}
+                    aria-pressed={isSelected}
+                    aria-label={`Size ${size} ${!isAvailable ? '(Out of stock)' : ''}`}
                     className={cn(
-                      "h-14 rounded-lg border text-sm font-bold uppercase transition-all flex items-center justify-center",
+                      "h-14 rounded-lg border text-sm font-bold uppercase transition-all flex items-center justify-center outline-none focus-visible:ring-2",
                       isSelected ? "bg-primary text-primary-foreground border-primary shadow-md" : "bg-transparent text-foreground border-border",
                       !isAvailable && "opacity-30 cursor-not-allowed bg-secondary decoration-slice line-through",
                       isAvailable && !isSelected && "hover:border-foreground/50"
@@ -351,20 +428,29 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
           <div className="pt-4">
             <button
               onClick={handleAddToCart}
-              disabled={isAdding || (activeVariant?.stock_quantity === 0)}
+              disabled={!canAddToCart}
+              aria-busy={isAdding}
               className={cn(
-                "w-full h-16 rounded-xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 shadow-xl active:scale-[0.98]",
-                isAdding ? "bg-emerald-600 text-white" : "bg-foreground text-background hover:opacity-90",
-                (!selectedSize || !selectedColor) && "opacity-50 cursor-not-allowed"
+                "w-full h-16 rounded-xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 shadow-xl outline-none focus-visible:ring-2",
+                isAdding ? "bg-emerald-600 text-white" : "bg-foreground text-background hover:opacity-90 active:scale-[0.98]",
+                !canAddToCart && "opacity-50 cursor-not-allowed active:scale-100"
               )}
             >
-              {isAdding ? <><Loader2 size={20} className="animate-spin" /> Securing</> : !selectedSize ? "Select a Size" : activeVariant?.stock_quantity === 0 ? "Out of Stock" : <>Add to Bag <ShoppingBag size={20} /></>}
+              {isAdding ? (
+                <><Loader2 size={20} className="animate-spin" /> Securing</>
+              ) : isColorOutOfStock ? (
+                "Sold Out"
+              ) : !selectedSize ? (
+                "Select a Size"
+              ) : (
+                <>Add to Bag <ShoppingBag size={20} /></>
+              )}
             </button>
             <p className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-4">Fast fulfillment across Kenya</p>
           </div>
 
           <div className="border-t border-border pt-8 mt-8">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">The Manifesto</h3>
+            <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">Product Details</h2>
             <p className="text-sm leading-relaxed text-foreground/80 whitespace-pre-wrap">{product.description || "Premium streetwear piece. Check label for care instructions."}</p>
           </div>
         </div>
