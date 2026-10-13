@@ -446,7 +446,7 @@ function ShowcaseContent({ product }: ProductShowcaseProps) {
                 <>Add to Bag <ShoppingBag size={20} /></>
               )}
             </button>
-            <p className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-4">Fast fulfillment across Kenya</p>
+            <p className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-4">Fast delivery across Kenya</p>
           </div>
 
           <div className="border-t border-border pt-8 mt-8">
